@@ -1,0 +1,415 @@
+
+/* =========================================
+   FreshMart Supermarket Management System
+   File: client/src/components/Sidebar.css
+   Theme: Soft Gray + Muted Teal
+========================================= */
+
+:root {
+  --fm-sidebar-width: 258px;
+  --fm-sidebar-collapsed-width: 76px;
+  --fm-sidebar-header-height: 76px;
+
+  --fm-sidebar-bg: #f8fafc;
+  --fm-sidebar-text: #526174;
+  --fm-sidebar-muted: #8997a8;
+  --fm-sidebar-border: #e5ebf1;
+  --fm-sidebar-primary: #398b83;
+  --fm-sidebar-primary-light: #e7f3f1;
+  --fm-sidebar-hover: #edf3f6;
+}
+
+/* Main sidebar */
+.fm-sidebar {
+  position: fixed;
+  top: var(--fm-sidebar-header-height);
+  bottom: 0;
+  left: 0;
+  z-index: 1018;
+
+  display: flex;
+  flex-direction: column;
+
+  width: var(--fm-sidebar-width);
+  height: calc(100vh - var(--fm-sidebar-header-height));
+  height: calc(100dvh - var(--fm-sidebar-header-height));
+
+  overflow: hidden;
+
+  background: var(--fm-sidebar-bg);
+  border-right: 1px solid var(--fm-sidebar-border);
+
+  transform: translateX(0);
+  transition:
+    width 0.25s ease,
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+
+  box-shadow: 2px 0 12px rgb(30 41 59 / 3%);
+}
+
+/* Brand */
+.fm-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+
+  flex-shrink: 0;
+  min-height: 84px;
+  padding: 16px 19px;
+
+  background: #f4f7fa;
+  border-bottom: 1px solid var(--fm-sidebar-border);
+}
+
+.fm-sidebar-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+
+  width: 42px;
+  height: 42px;
+
+  color: #ffffff;
+  background: #438e86;
+  border-radius: 11px;
+
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.fm-sidebar-brand-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.fm-sidebar-brand h5 {
+  margin: 0;
+
+  color: #293b50;
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.3px;
+}
+
+.fm-sidebar-brand-text > span {
+  display: block;
+  margin-top: 4px;
+
+  color: var(--fm-sidebar-muted);
+  font-size: 11px;
+}
+
+/* Menu heading */
+.fm-sidebar-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+
+  flex-shrink: 0;
+  padding: 22px 18px 10px;
+
+  color: var(--fm-sidebar-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.1px;
+  white-space: nowrap;
+}
+
+.fm-sidebar-role {
+  padding: 4px 7px;
+
+  color: #398078;
+  background: #e5f1ef;
+  border-radius: 5px;
+
+  font-size: 9px;
+  letter-spacing: 0.5px;
+}
+
+/* Scrollable navigation */
+.fm-sidebar-nav {
+  flex: 1;
+  min-height: 0;
+  padding: 0 11px 15px;
+
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  scrollbar-width: thin;
+  scrollbar-color: #d4dfe5 transparent;
+}
+
+.fm-sidebar-nav::-webkit-scrollbar {
+  width: 5px;
+}
+
+.fm-sidebar-nav::-webkit-scrollbar-thumb {
+  background: #d4dfe5;
+  border-radius: 10px;
+}
+
+.fm-sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Menu links */
+.fm-sidebar-link {
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  width: 100%;
+  min-height: 43px;
+  margin: 3px 0;
+  padding: 10px 12px;
+
+  color: var(--fm-sidebar-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.fm-sidebar-link > i {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 21px;
+
+  width: 21px;
+  color: #718195;
+  font-size: 17px;
+
+  transition: color 0.18s ease;
+}
+
+.fm-sidebar-link-text {
+  flex: 1;
+  min-width: 0;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hover */
+.fm-sidebar-link:hover {
+  color: #347c75;
+  background: var(--fm-sidebar-hover);
+}
+
+.fm-sidebar-link:hover > i {
+  color: #398b83;
+}
+
+/* Keyboard accessibility */
+.fm-sidebar-link:focus-visible {
+  outline: 2px solid var(--fm-sidebar-primary);
+  outline-offset: 2px;
+}
+
+/* Active menu */
+.fm-sidebar-link.active {
+  color: #347c75;
+  background: var(--fm-sidebar-primary-light);
+  border-color: #dcece8;
+  font-weight: 700;
+}
+
+.fm-sidebar-link.active > i {
+  color: #398b83;
+}
+
+.fm-sidebar-active-dot {
+  flex: 0 0 6px;
+
+  width: 6px;
+  height: 6px;
+
+  background: #398b83;
+  border-radius: 50%;
+}
+
+/* Empty menu */
+.fm-sidebar-empty {
+  padding: 12px;
+  color: var(--fm-sidebar-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Bottom section */
+.fm-sidebar-bottom {
+  flex-shrink: 0;
+  margin: 0 12px;
+  padding: 16px 8px 18px;
+
+  background: #f4f7fa;
+  border-top: 1px solid var(--fm-sidebar-border);
+  text-align: center;
+}
+
+.fm-sidebar-help-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 35px;
+  height: 35px;
+  margin: 0 auto 9px;
+
+  color: #398b83;
+  background: #e5f1ef;
+  border: 1px solid #dcece8;
+  border-radius: 10px;
+
+  font-size: 18px;
+}
+
+.fm-sidebar-bottom strong {
+  display: block;
+
+  color: #405166;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.fm-sidebar-bottom p {
+  margin: 5px 0 0;
+
+  color: var(--fm-sidebar-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+/* Mobile overlay */
+.fm-sidebar-overlay {
+  position: fixed;
+  top: var(--fm-sidebar-header-height);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1015;
+
+  width: 100%;
+  height: calc(100vh - var(--fm-sidebar-header-height));
+  height: calc(100dvh - var(--fm-sidebar-header-height));
+
+  padding: 0;
+  background: rgb(25 40 55 / 30%);
+  border: 0;
+  cursor: pointer;
+}
+
+/* Desktop: slide completely off-screen when collapsed */
+@media (min-width: 992px) {
+  .fm-sidebar.fm-sidebar-collapsed {
+    width: 0;
+    border-right: 0;
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+
+  .fm-sidebar-overlay {
+    display: none;
+  }
+}
+
+/* Tablet and mobile: hidden until opened */
+@media (max-width: 991.98px) {
+  .fm-sidebar {
+    width: min(var(--fm-sidebar-width), 84vw);
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+
+  .fm-sidebar.fm-sidebar-open {
+    transform: translateX(0);
+    box-shadow: 8px 0 28px rgb(15 23 42 / 12%);
+  }
+
+  .fm-sidebar.fm-sidebar-collapsed {
+    width: min(var(--fm-sidebar-width), 84vw);
+  }
+}
+
+/* Short screens */
+@media (max-height: 650px) {
+  .fm-sidebar-brand {
+    min-height: 68px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .fm-sidebar-section {
+    padding-top: 13px;
+  }
+
+  .fm-sidebar-link {
+    min-height: 38px;
+    margin: 2px 0;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .fm-sidebar-bottom {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .fm-sidebar-help-icon {
+    width: 28px;
+    height: 28px;
+    margin-bottom: 5px;
+  }
+}
+
+/* Mobile header height */
+@media (max-width: 767.98px) {
+  :root {
+    --fm-sidebar-header-height: 70px;
+  }
+
+  .fm-sidebar-brand {
+    min-height: 76px;
+  }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+  :root {
+    --fm-sidebar-header-height: 66px;
+  }
+
+  .fm-sidebar-brand {
+    padding-right: 15px;
+    padding-left: 15px;
+  }
+
+  .fm-sidebar-section {
+    padding-right: 15px;
+    padding-left: 15px;
+  }
+
+  .fm-sidebar-nav {
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+}

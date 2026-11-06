@@ -1,0 +1,43 @@
+
+.fm-not-found {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f6f8f7;
+  text-align: center;
+}
+
+.fm-not-found-content {
+  width: 100%;
+  max-width: 520px;
+  padding: 40px 24px;
+}
+
+.fm-not-found-icon {
+  margin-bottom: 18px;
+  color: #198754;
+  font-size: 64px;
+}
+
+.fm-not-found-code {
+  margin-bottom: 8px;
+  color: #198754;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+}
+
+.fm-not-found h1 {
+  margin-bottom: 14px;
+  color: #212529;
+  font-size: clamp(30px, 5vw, 44px);
+  font-weight: 700;
+}
+
+.fm-not-found-description {
+  margin-bottom: 26px;
+  color: #6c757d;
+  line-height: 1.7;
+}

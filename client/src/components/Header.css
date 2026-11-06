@@ -1,0 +1,619 @@
+
+/* =========================================
+   FreshMart Supermarket Management System
+   File: client/src/components/Header.css
+   Theme: Professional Navy + Soft Teal
+========================================= */
+
+.fm-header {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 1030;
+
+  height: 76px;
+  color: #e8eef6;
+  background: #24364b;
+  border-bottom: 1px solid #34485e;
+  box-shadow: 0 3px 12px rgb(15 23 42 / 12%);
+}
+
+.fm-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+
+  width: 100%;
+  height: 100%;
+  padding: 0 24px;
+}
+
+.fm-header-left,
+.fm-brand,
+.fm-header-right {
+  display: flex;
+  align-items: center;
+}
+
+.fm-header-left {
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.fm-brand {
+  gap: 11px;
+  min-width: 0;
+}
+
+.fm-brand-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+
+  width: 42px;
+  height: 42px;
+
+  color: #ffffff;
+  background: #438e86;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 11px;
+
+  font-size: 21px;
+  box-shadow: 0 2px 5px rgb(0 0 0 / 10%);
+}
+
+.fm-header-title {
+  min-width: 0;
+}
+
+.fm-header-title h5 {
+  margin: 0;
+
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.35px;
+}
+
+.fm-header-title span {
+  display: block;
+  margin-top: 4px;
+
+  color: #bdc9d7;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* Mobile menu and desktop sidebar toggle */
+.fm-menu-button,
+.fm-desktop-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  width: 40px;
+  height: 40px;
+  padding: 0;
+
+  color: #e2eaf2;
+  background: rgb(255 255 255 / 7%);
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 9px;
+
+  font-size: 21px;
+  cursor: pointer;
+
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.fm-menu-button:hover,
+.fm-desktop-sidebar-toggle:hover {
+  color: #ffffff;
+  background: #3b526a;
+  border-color: #587086;
+}
+
+/* Search area */
+.fm-search-wrapper {
+  flex: 1;
+  min-width: 120px;
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+.fm-header-search .input-group {
+  height: 40px;
+  overflow: hidden;
+
+  background: #ffffff;
+  border: 1px solid #dce5ed;
+  border-radius: 9px;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.fm-header-search .input-group:focus-within {
+  border-color: #77b6ad;
+  box-shadow: 0 0 0 3px rgb(119 182 173 / 16%);
+}
+
+.fm-header-search .input-group-text {
+  padding-left: 13px;
+
+  color: #78899c;
+  background: #ffffff;
+  border: 0;
+}
+
+.fm-header-search .form-control {
+  min-width: 0;
+
+  color: #26374a;
+  background: #ffffff;
+  border: 0;
+  box-shadow: none;
+
+  font-size: 13px;
+}
+
+.fm-header-search .form-control::placeholder {
+  color: #95a2b2;
+}
+
+.fm-search-clear {
+  padding: 0 12px;
+
+  color: #78899c;
+  background: #ffffff;
+  border: 0;
+  cursor: pointer;
+}
+
+.fm-search-clear:hover {
+  color: #438e86;
+}
+
+/* Header right side */
+.fm-header-right {
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+/* Notification bell */
+.fm-notification-button {
+  position: relative;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 42px;
+  height: 42px;
+  padding: 0 !important;
+
+  color: #e4ebf3 !important;
+  background: rgb(255 255 255 / 7%);
+  border: 1px solid rgb(255 255 255 / 13%) !important;
+  border-radius: 10px;
+
+  font-size: 19px;
+  text-decoration: none !important;
+
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.fm-notification-button::after {
+  display: none !important;
+}
+
+.fm-notification-button:hover,
+.fm-notification-button.show {
+  color: #ffffff !important;
+  background: #3b526a;
+}
+
+.fm-notification-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+
+  width: 7px;
+  height: 7px;
+
+  background: #e5a16c;
+  border: 1.5px solid #24364b;
+  border-radius: 50%;
+}
+
+/* Notification dropdown */
+.fm-notification-menu {
+  min-width: 235px;
+  margin-top: 10px !important;
+  padding: 10px;
+
+  color: #334155;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 14%);
+}
+
+.fm-notification-heading {
+  padding: 8px;
+  color: #293c51;
+  font-size: 14px;
+}
+
+.fm-notification-empty {
+  padding: 20px 10px;
+  color: #8795a6;
+  text-align: center;
+}
+
+.fm-notification-empty i {
+  font-size: 25px;
+}
+
+.fm-notification-empty p {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+/* Profile dropdown toggle */
+.fm-profile-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+
+  padding: 4px !important;
+
+  color: #ffffff !important;
+  border: 0 !important;
+  text-decoration: none !important;
+}
+
+.fm-profile-toggle::after {
+  margin-left: 3px;
+  color: #bdc9d7;
+}
+
+.fm-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  width: 40px;
+  height: 40px;
+
+  color: #ffffff;
+  background: #438e86;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 50%;
+
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.fm-profile-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 145px;
+}
+
+.fm-profile-info strong {
+  overflow: hidden;
+  max-width: 145px;
+
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-profile-info small {
+  margin-top: 3px;
+  color: #bdc9d7;
+  font-size: 11px;
+}
+
+/* Profile dropdown menu */
+.fm-profile-menu {
+  min-width: 220px;
+  margin-top: 10px !important;
+  padding: 9px;
+
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 14%);
+}
+
+.fm-dropdown-user {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 7px;
+}
+
+.fm-dropdown-user > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fm-dropdown-user strong {
+  color: #293c51;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.fm-dropdown-user small {
+  margin-top: 4px;
+  color: #8795a6;
+  font-size: 11px;
+}
+
+.fm-avatar-large {
+  width: 42px;
+  height: 42px;
+
+  color: #347b75;
+  background: #e6f3f0;
+  border-color: #d5e8e4;
+}
+
+.fm-logout-item {
+  padding: 10px;
+
+  color: #b65353;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.fm-logout-item:hover {
+  color: #9f3e3e;
+  background: #fff1f1;
+}
+
+/* Tablet */
+@media (max-width: 991.98px) {
+  .fm-header-inner {
+    gap: 14px;
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 767.98px) {
+  .fm-header {
+    height: 70px;
+  }
+
+  .fm-header-inner {
+    gap: 10px;
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .fm-header-title h5 {
+    font-size: 16px;
+  }
+
+  .fm-header-title span {
+    font-size: 10px;
+  }
+
+  .fm-brand-logo {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+
+  .fm-header-right {
+    gap: 8px;
+  }
+
+  .fm-notification-button {
+    width: 38px;
+    height: 38px;
+  }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+  .fm-header {
+    height: 66px;
+  }
+
+  .fm-header-inner {
+    gap: 6px;
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+
+  .fm-header-left {
+    gap: 7px;
+  }
+
+  .fm-menu-button {
+    width: 34px;
+    height: 36px;
+    font-size: 20px;
+  }
+
+  .fm-brand {
+    gap: 7px;
+  }
+
+  .fm-brand-logo {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+    border-radius: 9px;
+    font-size: 18px;
+  }
+
+  .fm-header-title h5 {
+    font-size: 14px;
+  }
+
+  .fm-header-title span {
+    max-width: 120px;
+    overflow: hidden;
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .fm-header-right {
+    gap: 5px;
+  }
+
+  .fm-notification-button {
+    width: 33px;
+    height: 35px;
+    font-size: 17px;
+  }
+
+  .fm-avatar {
+    width: 33px;
+    height: 33px;
+    font-size: 11px;
+  }
+
+  .fm-profile-toggle {
+    gap: 3px;
+  }
+
+  .fm-profile-toggle::after {
+    margin-left: 1px;
+  }
+}
+
+@media (max-width: 360px) {
+  .fm-header-title span {
+    display: none;
+  }
+
+  .fm-header-title h5 {
+    font-size: 13px;
+  }
+}
+
+.fm-avatar {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e8efff;
+  color: #245ac1;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.fm-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.fm-avatar-large {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+}
+
+.fm-notification-button {
+  position: relative;
+}
+
+.fm-notification-count {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  border-radius: 20px;
+  background: #e53935;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.fm-notification-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 14px;
+}
+
+.fm-notification-heading span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.fm-notification-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.fm-notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.fm-notification-item.unread {
+  background: #f0f5ff;
+}
+
+.fm-notification-item-icon {
+  color: #245ac1;
+}
+
+.fm-notification-item strong {
+  display: block;
+  font-size: 13px;
+}
+
+.fm-notification-item p {
+  margin: 4px 0;
+  color: #64748b;
+  font-size: 12px;
+  white-space: normal;
+}
+
+.fm-notification-item small {
+  color: #8792a3;
+  font-size: 11px;
+}

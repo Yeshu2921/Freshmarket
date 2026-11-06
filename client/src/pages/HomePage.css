@@ -1,0 +1,388 @@
+
+.home-page {
+  width: 100%;
+  color: #24352a;
+  background: #ffffff;
+}
+
+/* Banner */
+
+.home-banner-section {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 20px 0 12px;
+}
+
+.home-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 95%;
+  height: 340px;
+  min-height: 280px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #103d2d, #397b4d);
+  box-shadow: 0 8px 25px rgb(16 61 45 / 12%);
+}
+
+.home-banner-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.home-banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgb(8 39 24 / 20%);
+}
+
+.home-banner-content {
+  position: relative;
+  z-index: 1;
+  padding: 20px;
+  text-align: center;
+}
+
+.home-market-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 41px;
+  padding: 10px 22px;
+  border: 1px solid #198754 !important;
+  border-radius: 7px;
+  background: #198754 !important;
+  color: #ffffff !important;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.home-market-button:hover {
+  transform: translateY(-2px);
+  border-color: #146c43 !important;
+  background: #146c43 !important;
+}
+
+/* Gallery */
+
+.home-gallery {
+  padding: 30px 0 36px;
+  background: #f6f9f6;
+}
+
+.home-gallery-heading {
+  max-width: 650px;
+  margin: 0 auto 22px;
+  text-align: center;
+}
+
+.home-gallery-heading h2 {
+  margin: 0 0 8px;
+  color: #183d29;
+  font-size: clamp(21px, 2.5vw, 28px);
+  font-weight: 800;
+}
+
+.home-gallery-heading p {
+  margin: 0;
+  color: #718075;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.home-gallery-grid {
+  justify-content: center;
+}
+
+.home-gallery-card {
+  display: block;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid #e5ece6;
+  border-radius: 9px;
+  background: #ffffff;
+  color: inherit;
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.home-gallery-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgb(16 61 45 / 10%);
+  color: inherit;
+}
+
+.home-gallery-image-wrap {
+  width: 100%;
+  height: 105px;
+  overflow: hidden;
+  background: #e8efe9;
+}
+
+.home-gallery-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+
+.home-gallery-card:hover .home-gallery-image {
+  transform: scale(1.05);
+}
+
+.home-gallery-card-info {
+  min-height: 66px;
+  padding: 9px 10px;
+}
+
+.home-gallery-card-info span {
+  display: block;
+  margin-bottom: 4px;
+  color: #198754;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.home-gallery-card-info h3 {
+  margin: 0;
+  color: #263d2e;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.home-gallery-cta {
+  margin-top: 24px;
+  text-align: center;
+}
+
+/* View All Products and featured cards */
+
+.home-featured {
+  padding: 20px 0 35px;
+  background: #ffffff;
+}
+
+.home-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+}
+
+.home-view-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #198754;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.home-view-all:hover {
+  color: #146c43;
+  text-decoration: underline;
+}
+
+.home-featured-card {
+  overflow: hidden;
+  border: 1px solid #e5ece6;
+  border-radius: 9px;
+  background: #ffffff;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.home-featured-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgb(16 61 45 / 9%);
+}
+
+.home-featured-image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 145px;
+  overflow: hidden;
+  padding: 10px;
+  background: #f7faf7;
+}
+
+.home-featured-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.home-featured-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #198754;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.home-featured-card .card-body {
+  padding: 12px;
+}
+
+.home-featured-card .card-title {
+  margin-bottom: 8px;
+  color: #293d30;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.home-featured-price {
+  color: #198754;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.home-loading {
+  padding: 30px 12px;
+  color: #198754;
+  text-align: center;
+}
+
+/* About */
+
+.home-about {
+  padding: 32px 0;
+  background: #edf5ef;
+  scroll-margin-top: 20px;
+}
+
+.home-about h2 {
+  margin-bottom: 10px;
+  color: #183d29;
+  font-size: 25px;
+  font-weight: 800;
+}
+
+.home-about p {
+  max-width: 720px;
+  margin-bottom: 0;
+  color: #647368;
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+/* Tablet */
+
+@media (max-width: 991px) {
+  .home-banner {
+    height: 300px;
+    min-height: 260px;
+  }
+
+  .home-gallery-image-wrap {
+    height: 110px;
+  }
+}
+
+/* Mobile */
+
+@media (max-width: 575px) {
+  .home-banner-section {
+    padding: 12px 0 8px;
+  }
+
+  .home-banner {
+    width: 95%;
+    height: 250px;
+    min-height: 230px;
+    border-radius: 10px;
+  }
+
+  .home-banner-content {
+    padding: 15px;
+  }
+
+  .home-market-button {
+    min-height: 37px;
+    padding: 9px 15px;
+    font-size: 12px;
+  }
+
+  .home-gallery {
+    padding: 24px 0 28px;
+  }
+
+  .home-gallery-heading {
+    margin-bottom: 17px;
+    padding: 0 8px;
+  }
+
+  .home-gallery-heading h2 {
+    font-size: 21px;
+  }
+
+  .home-gallery-heading p {
+    font-size: 12px;
+  }
+
+  .home-gallery-image-wrap {
+    height: 95px;
+  }
+
+  .home-gallery-card-info {
+    min-height: 62px;
+    padding: 8px;
+  }
+
+  .home-gallery-card-info h3 {
+    font-size: 11px;
+  }
+
+  .home-gallery-card-info span {
+    font-size: 9px;
+  }
+
+  .home-featured {
+    padding: 15px 0 28px;
+  }
+
+  .home-section-heading {
+    margin-bottom: 15px;
+  }
+
+  .home-view-all {
+    font-size: 12px;
+  }
+
+  .home-featured-image-wrap {
+    height: 115px;
+  }
+
+  .home-featured-card .card-body {
+    padding: 9px;
+  }
+
+  .home-featured-card .card-title,
+  .home-featured-price {
+    font-size: 12px;
+  }
+
+  .home-about {
+    padding: 25px 0;
+  }
+
+  .home-about h2 {
+    font-size: 22px;
+  }
+}

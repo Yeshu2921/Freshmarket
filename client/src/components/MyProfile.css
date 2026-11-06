@@ -1,0 +1,285 @@
+
+.mp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.58);
+  overflow-y: auto;
+}
+
+.mp-modal {
+  width: min(780px, 100%);
+  max-height: 92vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+}
+
+.mp-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 26px;
+  border-bottom: 1px solid #e9edf3;
+}
+
+.mp-header > div > span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+
+.mp-header h2 {
+  margin: 5px 0;
+  color: #172033;
+  font-size: 25px;
+  font-weight: 750;
+}
+
+.mp-header p,
+.mp-photo-info p,
+.mp-password-form > p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.mp-close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 9px;
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.mp-body {
+  padding: 24px 26px;
+}
+
+.mp-photo-section {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 26px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e9edf3;
+}
+
+.mp-photo {
+  width: 88px;
+  height: 88px;
+  min-width: 88px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #eaf1ff;
+  color: #315dbb;
+  font-size: 34px;
+}
+
+.mp-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mp-photo-info {
+  min-width: 0;
+}
+
+.mp-photo-info strong,
+.mp-form h3 {
+  display: block;
+  margin-bottom: 7px;
+  color: #172033;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.mp-photo-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.mp-photo-form input {
+  max-width: 100%;
+  font-size: 12px;
+}
+
+.mp-form {
+  margin-bottom: 26px;
+}
+
+.mp-form h3 {
+  margin-bottom: 16px;
+}
+
+.mp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+}
+
+.mp-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 15px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.mp-form input,
+.mp-form select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  font-weight: 400;
+}
+
+.mp-form input:focus,
+.mp-form select:focus {
+  border-color: #4778dc;
+  box-shadow: 0 0 0 3px rgba(71, 120, 220, 0.12);
+}
+
+.mp-form button,
+.mp-photo-form button {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #245ac1;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mp-form button:disabled,
+.mp-photo-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.mp-password-form {
+  padding-top: 22px;
+  border-top: 1px solid #e9edf3;
+}
+
+.mp-password-form > p {
+  margin: -8px 0 16px;
+}
+
+.mp-password-form label {
+  max-width: 480px;
+}
+
+.mp-alert {
+  margin: 16px 26px 0;
+  padding: 11px 13px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.mp-alert.error {
+  background: #fff0f0;
+  color: #b42318;
+}
+
+.mp-alert.success {
+  background: #eaf8ef;
+  color: #187344;
+}
+
+@media (max-width: 600px) {
+  .mp-overlay {
+    padding: 8px;
+  }
+
+  .mp-modal {
+    max-height: 96vh;
+    border-radius: 12px;
+  }
+
+  .mp-header,
+  .mp-body {
+    padding: 18px;
+  }
+
+  .mp-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .mp-photo-section {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* Password field with show/hide eye button */
+.mp-password-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.mp-password-input input {
+  width: 100%;
+  padding-right: 44px;
+  box-sizing: border-box;
+}
+
+.mp-password-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 18px;
+  border-radius: 5px;
+}
+
+.mp-password-toggle:hover {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.mp-password-toggle:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.mp-password-toggle i {
+  pointer-events: none;
+}

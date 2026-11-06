@@ -1,0 +1,11 @@
+.public-site {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.public-main {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+}

@@ -1,0 +1,24 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build files
+dist/
+build/
+
+# Logs
+*.log
+
+# Uploaded files
+backend/uploads/
+backend/public/images/homepage/
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

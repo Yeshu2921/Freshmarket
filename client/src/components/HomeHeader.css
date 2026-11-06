@@ -1,0 +1,247 @@
+
+/* =====================================
+   FreshMart Public Header
+   File: components/HomeHeader.css
+===================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.public-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2000;
+  width: 100%;
+  max-width: 100%;
+  background: #e0dee7;
+  border-bottom: 3px solid #6bd385;
+}
+
+/* Top announcement bar */
+
+
+
+/* Main navbar */
+
+.public-main-nav {
+  width: 100%;
+  min-height: 70px;
+  padding: 10px 0;
+  background: #e4d4dd;
+}
+
+.public-main-nav .container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* FreshMart brand */
+
+.public-brand {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-right: 20px;
+  color: #103d2d !important;
+  text-decoration: none;
+}
+
+.public-brand:hover {
+  color: #198754 !important;
+}
+
+.public-brand-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #198754;
+  color: #ffffff;
+  font-size: 23px;
+  font-weight: 800;
+}
+
+.public-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.public-brand-text strong {
+  color: #103d2d;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.public-brand-text small {
+  margin-top: 4px;
+  color: #718075;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
+}
+
+/* Navigation links */
+
+.public-main-nav .navbar-collapse {
+  min-width: 0;
+}
+
+.public-nav-links {
+  gap: 8px;
+}
+
+.public-main-nav .navbar-nav .nav-link {
+  padding: 10px 12px;
+  color: #35483b;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.public-main-nav .navbar-nav .nav-link:hover,
+.public-main-nav .navbar-nav .nav-link:focus {
+  color: #198754;
+}
+
+/* Login button */
+
+.public-login {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  margin-left: 8px;
+  padding: 8px 20px;
+  border: 1px solid #198754 !important;
+  border-radius: 7px;
+  background: #198754 !important;
+  color: #ffffff !important;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.public-login:hover,
+.public-login:focus {
+  border-color: #146c43 !important;
+  background: #146c43 !important;
+  color: #ffffff !important;
+}
+
+/* Navbar toggle */
+
+.public-main-nav .navbar-toggler {
+  flex-shrink: 0;
+  padding: 6px 9px;
+  border: 1px solid #d8e5dc;
+  border-radius: 7px;
+  box-shadow: none;
+}
+
+.public-main-nav .navbar-toggler:focus {
+  box-shadow: 0 0 0 3px rgb(25 135 84 / 12%);
+}
+
+.public-main-nav .navbar-toggler-icon {
+  width: 22px;
+  height: 22px;
+}
+
+/* Tablet and mobile screens */
+
+@media (max-width: 991.98px) {
+  .public-main-nav {
+    min-height: 62px;
+    padding: 9px 0;
+  }
+
+  .public-main-nav .container {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .public-brand {
+    margin-right: 0;
+  }
+
+  .public-main-nav .navbar-toggler {
+    margin-left: auto;
+  }
+
+  /* Keep expanded navigation within the fixed header */
+  .public-main-nav .navbar-collapse {
+    flex-basis: 100%;
+    width: 100%;
+    max-height: calc(100vh - 62px);
+    max-height: calc(100dvh - 62px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    margin-top: 8px;
+    padding: 10px 0 5px;
+    border-top: 1px solid #e8eee9;
+  }
+
+  .public-nav-links {
+    align-items: stretch !important;
+    gap: 3px;
+  }
+
+  .public-main-nav .navbar-nav .nav-link {
+    display: block;
+    padding: 11px 12px;
+    border-radius: 6px;
+  }
+
+  .public-main-nav .navbar-nav .nav-link:hover {
+    background: #f0f7f2;
+  }
+
+  .public-login {
+    width: 100%;
+    margin: 8px 0 5px;
+  }
+}
+
+/* Small mobile screens */
+
+@media (max-width: 480px) {
+  .public-brand {
+    gap: 8px;
+  }
+
+  .public-brand-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 21px;
+  }
+
+  .public-brand-text strong {
+    font-size: 18px;
+  }
+
+  .public-brand-text small {
+    font-size: 8px;
+  }
+
+  .public-main-nav .container {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+}

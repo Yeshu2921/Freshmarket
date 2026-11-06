@@ -1,0 +1,104 @@
+
+/* =====================================
+   FreshMart Public Home Layout
+   File: layouts/HomeLayout.css
+===================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  width: 100%;
+  overflow-x: clip;
+}
+
+body {
+  width: 100%;
+  margin: 0;
+  overflow-x: clip;
+}
+
+#root {
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+}
+
+/* Main public layout */
+
+.public-site {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+
+  /* Space for the fixed header */
+  padding-top: 70px;
+
+  overflow-x: clip;
+  box-sizing: border-box;
+}
+
+/* Homepage and other public page content */
+
+.public-main {
+  position: relative;
+  flex: 1 0 auto;
+
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+
+  margin: 0;
+  box-sizing: border-box;
+}
+
+/* Keep page sections within the screen */
+
+.public-main > * {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Footer remains after the page content */
+
+.public-site > footer,
+.public-site .public-footer {
+  position: relative;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Tablet and mobile */
+
+@media (max-width: 991.98px) {
+  .public-site {
+    padding-top: 62px;
+  }
+
+  .public-main {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Small screens */
+
+@media (max-width: 480px) {
+  .public-site,
+  .public-main {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+}

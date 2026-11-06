@@ -1,0 +1,133 @@
+
+/* =========================================
+   FreshMart - Owner Layout
+   File: client/src/layouts/OwnerLayout.css
+========================================= */
+
+.owner-layout {
+  --owner-sidebar-width: 258px;
+
+  min-height: 100vh;
+  padding-top: 76px;
+  background: #f5f8fa;
+}
+
+/* Main content beside the sidebar */
+.owner-main-content {
+  display: flex;
+  flex-direction: column;
+
+  min-width: 0;
+  min-height: calc(100vh - 76px);
+  margin-left: var(--owner-sidebar-width);
+
+  transition: margin-left 0.25s ease;
+}
+
+.owner-page-content {
+  flex: 1;
+  min-width: 0;
+  padding: 24px;
+}
+
+/* Desktop: content uses the full width when sidebar is hidden */
+@media (min-width: 992px) {
+  .owner-layout.owner-sidebar-collapsed .owner-main-content {
+    margin-left: 0;
+  }
+}
+
+/* Placeholder for pages not connected yet */
+.owner-page-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 320px;
+  padding: 32px;
+
+  color: #64748b;
+  background: #ffffff;
+  border: 1px solid #e6edf2;
+  border-radius: 14px;
+  text-align: center;
+}
+
+.owner-placeholder-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 58px;
+  height: 58px;
+  margin-bottom: 16px;
+
+  color: #398b83;
+  background: #e8f4f2;
+  border-radius: 16px;
+  font-size: 25px;
+}
+
+.owner-page-placeholder h3 {
+  margin: 0 0 8px;
+  color: #334155;
+  font-size: 21px;
+}
+
+.owner-page-placeholder p {
+  max-width: 400px;
+  margin: 0;
+  color: #8492a6;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Tablet and mobile */
+@media (max-width: 991.98px) {
+  .owner-layout {
+    padding-top: 76px;
+  }
+
+  .owner-main-content {
+    min-height: calc(100vh - 76px);
+    margin-left: 0;
+  }
+
+  .owner-page-content {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .owner-layout {
+    padding-top: 70px;
+  }
+
+  .owner-main-content {
+    min-height: calc(100vh - 70px);
+  }
+
+  .owner-page-content {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .owner-layout {
+    padding-top: 66px;
+  }
+
+  .owner-main-content {
+    min-height: calc(100vh - 66px);
+  }
+
+  .owner-page-content {
+    padding: 12px;
+  }
+
+  .owner-page-placeholder {
+    min-height: 260px;
+    padding: 22px;
+  }
+}

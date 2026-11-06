@@ -1,0 +1,155 @@
+
+.fm-login-page {
+  min-height: 100vh;
+  padding: 20px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f6fb;
+  font-family: Arial, sans-serif;
+}
+
+.fm-login-card {
+  width: 100%;
+  max-width: 365px;
+  padding: 23px 25px 17px;
+  background: #fff;
+  border: 1px solid #e8edf3;
+  border-radius: 10px;
+  box-shadow: 0 5px 22px rgba(30, 50, 80, 0.07);
+}
+
+.fm-login-brand {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.fm-login-logo {
+  width: 39px;
+  height: 39px;
+  margin: 0 auto 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #1769d2;
+  border-radius: 9px;
+  font-size: 19px;
+}
+
+.fm-login-brand h1 {
+  margin: 0;
+  color: #203047;
+  font-size: 22px;
+  font-weight: 500;
+}
+
+.fm-login-brand p {
+  margin: 4px 0 0;
+  color: #7b8797;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.fm-login-heading {
+  margin-bottom: 17px;
+}
+
+.fm-login-heading h2 {
+  margin: 0 0 4px;
+  color: #253247;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.fm-login-heading p {
+  margin: 0;
+  color: #7b8797;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.fm-login-card .form-label {
+  margin-bottom: 5px;
+  color: #39465a;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.fm-login-input .input-group-text,
+.fm-login-input .form-control {
+  min-height: 37px;
+  padding: 7px 10px;
+  border-color: #dfe5ed;
+  font-size: 12px;
+}
+
+.fm-login-input .input-group-text {
+  color: #718096;
+  background: #f8fafc;
+}
+
+.fm-login-input .form-control:focus {
+  border-color: #80b1f3;
+  box-shadow: 0 0 0 2px rgba(23, 105, 210, 0.08);
+}
+
+.fm-login-input .form-control::placeholder {
+  color: #a0a9b6;
+  font-size: 12px;
+}
+
+.fm-password-toggle {
+  padding: 5px 10px;
+  border-color: #dfe5ed;
+  font-size: 12px;
+}
+
+.fm-login-forgot {
+  margin: 9px 0 16px;
+  text-align: right;
+  font-size: 12px;
+}
+
+.fm-login-forgot a {
+  color: #1769d2;
+  text-decoration: none;
+}
+
+.fm-login-forgot a:hover {
+  text-decoration: underline;
+}
+
+.fm-login-button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.fm-login-alert {
+  padding: 8px 10px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.fm-login-footer {
+  margin-top: 17px;
+  padding-top: 12px;
+  border-top: 1px solid #edf0f4;
+  color: #8a95a4;
+  text-align: center;
+  font-size: 10px;
+}
+
+@media (max-width: 420px) {
+  .fm-login-page {
+    padding: 14px 10px;
+  }
+
+  .fm-login-card {
+    padding: 20px 17px 15px;
+  }
+}
