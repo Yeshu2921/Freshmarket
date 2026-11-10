@@ -5,6 +5,7 @@ const router = express.Router();
 const {
   getWorkerOrders,
   getWorkerOrderDetails,
+  getWorkerOrderReceipt,
   approveOrder,
   rejectOrder,
   getWorkerSalesHistory,
@@ -16,7 +17,10 @@ const {
   requireOwnerOrWorker,
 } = require("../middleware/authMiddleware");
 
-// All routes require an authenticated owner or worker.
+// All routes require authentication.
+// Both owner and worker can view orders and receipts.
+// Controller functions restrict approval, rejection and deletion
+// to workers only.
 router.use(requireAuth);
 router.use(requireOwnerOrWorker);
 
@@ -24,7 +28,12 @@ router.use(requireOwnerOrWorker);
 router.get("/", getWorkerOrders);
 
 // IMPORTANT: Keep this before /:orderId.
+// GET /api/worker-orders/sales-history
 router.get("/sales-history", getWorkerSalesHistory);
+
+// IMPORTANT: Keep receipt route before general order details.
+// GET /api/worker-orders/:orderId/receipt
+router.get("/:orderId/receipt", getWorkerOrderReceipt);
 
 // GET /api/worker-orders/:orderId
 router.get("/:orderId", getWorkerOrderDetails);

@@ -227,11 +227,14 @@ export default function CategoryManagement() {
     }
   }
 
-  const parentOptions = categories.filter(
-    (category) =>
-      category.is_active &&
-      category.id !== editingCategory?.id
-  );
+  // Only active main categories can be selected as parents.
+// Subcategories cannot contain other subcategories.
+const parentOptions = categories.filter(
+  (category) =>
+    category.is_active &&
+    category.parent_id == null &&
+    category.id !== editingCategory?.id
+);
 
   return (
     <div className="category-page">

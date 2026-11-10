@@ -7,70 +7,170 @@ const path = require("path");
 const fs = require("fs");
 const db = require("./db");
 
-// Routes
+// ======================================================
+// IMPORT ROUTES
+// ======================================================
+
+// Authentication and users
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
+
+// Products, categories and brands
 const brandRoutes = require("./routes/brandRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const productRoutes = require("./routes/productRoutes");
-const customerProductRoutes = require("./routes/customerProductRoutes");
-const customerOrderRoutes = require("./routes/customerOrderRoutes");
+const customerProductRoutes = require(
+  "./routes/customerProductRoutes"
+);
+
+// Customer orders and order history
+const customerOrderRoutes = require(
+  "./routes/customerOrderRoutes"
+);
 const customerOrderHistoryRoutes = require(
   "./routes/customerOrderHistoryRoutes"
 );
-const workerOrderRoutes = require("./routes/workerOrderRoutes");
-const ownerOrderRoutes = require("./routes/ownerOrderRoutes");
-const ownerReportRoutes = require("./routes/ownerReportRoutes");
-const ownerDashboardRoutes = require("./routes/ownerDashboardRoutes");
-const workerDashboardRoutes = require("./routes/workerDashboardRoutes");
-const homepageRoutes = require("./routes/homepageRoutes");
 
-// Create Express application FIRST.
+// Worker and owner orders
+const workerOrderRoutes = require(
+  "./routes/workerOrderRoutes"
+);
+const ownerOrderRoutes = require(
+  "./routes/ownerOrderRoutes"
+);
+
+// Dashboards and reports
+const ownerReportRoutes = require(
+  "./routes/ownerReportRoutes"
+);
+const ownerDashboardRoutes = require(
+  "./routes/ownerDashboardRoutes"
+);
+const workerDashboardRoutes = require(
+  "./routes/workerDashboardRoutes"
+);
+
+// Homepage management
+const homepageRoutes = require(
+  "./routes/homepageRoutes"
+);
+
+// ======================================================
+// CREATE EXPRESS APPLICATION
+// ======================================================
+
 const app = express();
 
-// Middleware
+// ======================================================
+// MIDDLEWARE
+// ======================================================
+
+// CORS configuration
 app.use(
   cors({
     origin: process.env.CLIENT_URL || "http://localhost:5133",
+    credentials: true,
   })
 );
 
+// Parse JSON request bodies.
+// Must be registered before API routes.
 app.use(express.json({ limit: "1mb" }));
+
+// Parse form-urlencoded request bodies.
 app.use(express.urlencoded({ extended: true }));
 
-// Ensure upload directories exist.
-const uploadsDirectory = path.join(__dirname, "uploads");
+// ======================================================
+// UPLOAD DIRECTORIES
+// ======================================================
+
+// Public product image directory.
+const uploadsDirectory = path.join(
+  __dirname,
+  "uploads"
+);
+
 const productUploadsDirectory = path.join(
   uploadsDirectory,
   "products"
 );
 
-fs.mkdirSync(productUploadsDirectory, { recursive: true });
-
-// Serve uploaded product images.
-app.use("/uploads", express.static(uploadsDirectory));
-
-// Serve homepage images from backend/public.
-const publicDirectory = path.join(__dirname, "public");
-
-fs.mkdirSync(
-  path.join(publicDirectory, "images", "homepage"),
-  { recursive: true }
+// Private payment receipt directory.
+// NEVER serve this directory using express.static().
+const privateUploadsDirectory = path.join(
+  __dirname,
+  "private_uploads"
 );
 
-app.use(express.static(publicDirectory));
+const customerReceiptDirectory = path.join(
+  privateUploadsDirectory,
+  "customer",
+  "payment-receipts"
+);
 
-// Database health check.
+// Homepage image directory.
+const publicDirectory = path.join(
+  __dirname,
+  "public"
+);
+
+const homepageImagesDirectory = path.join(
+  publicDirectory,
+  "images",
+  "homepage"
+);
+
+// Create directories automatically if they do not exist.
+fs.mkdirSync(productUploadsDirectory, {
+  recursive: true,
+});
+
+fs.mkdirSync(customerReceiptDirectory, {
+  recursive: true,
+});
+
+fs.mkdirSync(homepageImagesDirectory, {
+  recursive: true,
+});
+
+// ======================================================
+// PUBLIC STATIC FILES
+// ======================================================
+
+// Public product images:
+// http://localhost:5134/uploads/products/image.jpg
+app.use(
+  "/uploads",
+  express.static(uploadsDirectory)
+);
+
+// Public homepage images:
+// http://localhost:5134/images/homepage/image.jpg
+app.use(
+  express.static(publicDirectory)
+);
+
+// IMPORTANT:
+// Do not add express.static() for privateUploadsDirectory.
+// Payment receipts must be accessed through authenticated routes.
+
+// ======================================================
+// DATABASE HEALTH CHECK
+// ======================================================
+
 app.get("/api/health", async (req, res) => {
   try {
     await db.query("SELECT 1");
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       message: "FreshMart backend and database are connected.",
     });
   } catch (error) {
-    console.error("Health check failed:", error.message);
+    console.error(
+      "Health check failed:",
+      error.message
+    );
 
     return res.status(500).json({
       success: false,
@@ -79,47 +179,139 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
-// Authentication and profile.
-app.use("/api/auth", authRoutes);
+// ======================================================
+// AUTHENTICATION AND USER MANAGEMENT
+// ======================================================
 
-// User management.
-app.use("/api/users", userRoutes);
+app.use(
+  "/api/auth",
+  authRoutes
+);
 
-// Categories and brands.
-app.use("/api/brands", brandRoutes);
-app.use("/api/categories", categoryRoutes);
+app.use(
+  "/api/users",
+  userRoutes
+);
 
-// Product management.
-app.use("/api/products", productRoutes);
-app.use("/api/customer-products", customerProductRoutes);
+// ======================================================
+// CATEGORIES AND BRANDS
+// ======================================================
 
-// Customer orders.
-app.use("/api/customer-orders", customerOrderRoutes);
-app.use("/api/customer-orders", customerOrderHistoryRoutes);
+app.use(
+  "/api/brands",
+  brandRoutes
+);
 
-// Worker and owner orders.
-app.use("/api/worker-orders", workerOrderRoutes);
-app.use("/api/owner-orders", ownerOrderRoutes);
+app.use(
+  "/api/categories",
+  categoryRoutes
+);
 
-// Dashboards and reports.
-app.use("/api/owner-reports", ownerReportRoutes);
-app.use("/api/owner-dashboard", ownerDashboardRoutes);
-app.use("/api/worker-dashboard", workerDashboardRoutes);
+// ======================================================
+// PRODUCT MANAGEMENT
+// ======================================================
 
-// Homepage banner and gallery management.
-app.use("/api/homepage", homepageRoutes);
+app.use(
+  "/api/products",
+  productRoutes
+);
 
-// 404 handler.
+app.use(
+  "/api/customer-products",
+  customerProductRoutes
+);
+
+// ======================================================
+// CUSTOMER ORDERS
+// ======================================================
+
+app.use(
+  "/api/customer-orders",
+  customerOrderRoutes
+);
+
+app.use(
+  "/api/customer-orders",
+  customerOrderHistoryRoutes
+);
+
+// ======================================================
+// WORKER AND OWNER ORDERS
+// ======================================================
+
+// Worker order management:
+// GET    /api/worker-orders
+// GET    /api/worker-orders/sales-history
+// GET    /api/worker-orders/:orderId
+// GET    /api/worker-orders/:orderId/receipt
+// POST   /api/worker-orders/:orderId/approve
+// POST   /api/worker-orders/:orderId/reject
+// DELETE /api/worker-orders/:orderId/rejected
+
+app.use(
+  "/api/worker-orders",
+  workerOrderRoutes
+);
+
+// Owner order management:
+// GET    /api/owner-orders
+// GET    /api/owner-orders/:orderId
+// GET    /api/owner-orders/:orderId/receipt
+// DELETE /api/owner-orders/:orderId
+
+app.use(
+  "/api/owner-orders",
+  ownerOrderRoutes
+);
+
+// ======================================================
+// DASHBOARDS AND REPORTS
+// ======================================================
+
+app.use(
+  "/api/owner-reports",
+  ownerReportRoutes
+);
+
+app.use(
+  "/api/owner-dashboard",
+  ownerDashboardRoutes
+);
+
+app.use(
+  "/api/worker-dashboard",
+  workerDashboardRoutes
+);
+
+// ======================================================
+// HOMEPAGE MANAGEMENT
+// ======================================================
+
+app.use(
+  "/api/homepage",
+  homepageRoutes
+);
+
+// ======================================================
+// 404 HANDLER
+// ======================================================
+
 app.use((req, res) => {
-  res.status(404).json({
+  return res.status(404).json({
     success: false,
     message: "API endpoint not found.",
   });
 });
 
-// General error handler.
+// ======================================================
+// GENERAL ERROR HANDLER
+// ======================================================
+
 app.use((error, req, res, next) => {
-  console.error("Unhandled server error:", error.message);
+  console.error(
+    "Unhandled server error:",
+    error.message
+  );
 
   if (res.headersSent) {
     return next(error);
@@ -131,24 +323,81 @@ app.use((error, req, res, next) => {
   });
 });
 
+// ======================================================
+// START SERVER
+// ======================================================
+
 const PORT = Number(process.env.PORT || 5134);
 
 async function startServer() {
   try {
+    // Verify MySQL connection before starting server.
     await db.query("SELECT 1");
 
     app.listen(PORT, () => {
-      console.log(`FreshMart backend running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/api/health`);
-      console.log(`Authentication: http://localhost:${PORT}/api/auth`);
-      console.log(`User Management: http://localhost:${PORT}/api/users`);
-      console.log(`Products: http://localhost:${PORT}/api/products`);
-      console.log(`Homepage: http://localhost:${PORT}/api/homepage`);
+      console.log("--------------------------------------");
+      console.log("       FRESHMART BACKEND STARTED");
+      console.log("--------------------------------------");
+
+      console.log(
+        `Server: http://localhost:${PORT}`
+      );
+
+      console.log(
+        `Health: http://localhost:${PORT}/api/health`
+      );
+
+      console.log(
+        `Auth: http://localhost:${PORT}/api/auth`
+      );
+
+      console.log(
+        `Users: http://localhost:${PORT}/api/users`
+      );
+
+      console.log(
+        `Products: http://localhost:${PORT}/api/products`
+      );
+
+      console.log(
+        `Customer Orders: http://localhost:${PORT}/api/customer-orders`
+      );
+
+      console.log(
+        `Worker Orders: http://localhost:${PORT}/api/worker-orders`
+      );
+
+      console.log(
+        `Owner Orders: http://localhost:${PORT}/api/owner-orders`
+      );
+
+      console.log(
+        `Owner Reports: http://localhost:${PORT}/api/owner-reports`
+      );
+
+      console.log(
+        `Homepage: http://localhost:${PORT}/api/homepage`
+      );
+
+      console.log("--------------------------------------");
+      console.log("MySQL connection successful.");
+      console.log("Private payment receipts protected.");
+      console.log("--------------------------------------");
     });
   } catch (error) {
-    console.error("Unable to connect to MySQL:", error.message);
+    console.error(
+      "Unable to connect to MySQL:",
+      error.message
+    );
+
     process.exitCode = 1;
   }
 }
 
 startServer();
+
+// ======================================================
+// EXPORT APP (USEFUL FOR TESTING)
+// ======================================================
+
+module.exports = app;

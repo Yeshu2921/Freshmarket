@@ -7,26 +7,60 @@ const homepageUpload = require("../middleware/homepageUpload");
 const {
   getBanner,
   updateBanner,
+  getLogo,
+  updateLogo,
   getHomepagePosts,
   createHomepagePost,
   deleteHomepagePost,
+  getPaymentMethods,
+  createPaymentMethod,
+  updatePaymentMethod,
+  deletePaymentMethod,
 } = require("../controllers/homepageController");
 
-const {
-  requireAuth,
-} = require("../middleware/authMiddleware");
+const { requireAuth } = require("../middleware/authMiddleware");
 
-// Public customer routes.
+// Verify that the authenticated account is an owner.
+function requireOwner(req, res, next) {
+  if (String(req.user?.role || "").toLowerCase() !== "owner") {
+    return res.status(403).json({
+      success: false,
+      message: "Only the owner can manage this content.",
+    });
+  }
+
+  next();
+}
+
+// ========================================
+// PUBLIC CUSTOMER ROUTES
+// ========================================
+
 router.get("/banner", getBanner);
+router.get("/logo", getLogo);
 router.get("/posts", getHomepagePosts);
 
-// Owner-only routes.
+// Customers can view active payment methods.
+router.get("/payment-methods", getPaymentMethods);
+
+// ========================================
+// OWNER-ONLY HOMEPAGE ROUTES
+// ========================================
+
 router.post(
   "/banner",
   requireAuth,
   requireOwner,
   homepageUpload.single("image"),
   updateBanner
+);
+
+router.post(
+  "/logo",
+  requireAuth,
+  requireOwner,
+  homepageUpload.single("image"),
+  updateLogo
 );
 
 router.post(
@@ -44,16 +78,29 @@ router.delete(
   deleteHomepagePost
 );
 
-// Verify the authenticated account is an owner.
-function requireOwner(req, res, next) {
-  if (String(req.user?.role || "").toLowerCase() !== "owner") {
-    return res.status(403).json({
-      success: false,
-      message: "Only the owner can manage homepage images.",
-    });
-  }
+// ========================================
+// OWNER-ONLY PAYMENT METHOD ROUTES
+// ========================================
 
-  next();
-}
+router.post(
+  "/payment-methods",
+  requireAuth,
+  requireOwner,
+  createPaymentMethod
+);
+
+router.put(
+  "/payment-methods/:id",
+  requireAuth,
+  requireOwner,
+  updatePaymentMethod
+);
+
+router.delete(
+  "/payment-methods/:id",
+  requireAuth,
+  requireOwner,
+  deletePaymentMethod
+);
 
 module.exports = router;

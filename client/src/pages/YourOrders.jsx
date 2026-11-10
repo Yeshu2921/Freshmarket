@@ -318,8 +318,8 @@ export default function YourOrders() {
         {searched && orders.length === 0 && !loading && (
           <div className="orders-empty-state">
             <div className="orders-empty-icon">
-              <ShoppingBag />
-            </div>
+             <Bag />
+              </div>
 
             <h5>No Orders Found</h5>
 

@@ -22,44 +22,59 @@ async function getOwnerDashboard(req, res) {
   try {
     // 1. Dashboard summary cards
     const summaryRows = await queryRows(`
-      SELECT
-        (
-          SELECT COUNT(*)
-          FROM products
-          WHERE status = 'Active'
-        ) AS totalProducts,
+  SELECT
+    (
+      SELECT COUNT(*)
+      FROM products
+      WHERE status = 'Active'
+    ) AS totalProducts,
 
-        (
-          SELECT COALESCE(SUM(grand_total), 0)
-          FROM customer_orders
-          WHERE order_status = 'Delivered'
-            AND DATE(created_at) = CURDATE()
-        ) AS todaySales,
+    (
+      SELECT COALESCE(SUM(o.grand_total), 0)
+      FROM customer_orders o
+      INNER JOIN customer_payments p
+        ON p.id = (
+          SELECT MAX(p2.id)
+          FROM customer_payments p2
+          WHERE p2.order_id = o.id
+        )
+      WHERE p.payment_status = 'Approved'
+        AND o.order_status NOT IN ('Cancelled', 'Rejected')
+        AND COALESCE(p.reviewed_at, o.created_at)
+            >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        AND COALESCE(p.reviewed_at, o.created_at) <= NOW()
+    ) AS todaySales,
 
-        (
-          SELECT COUNT(*)
-          FROM users
-          WHERE role IN ('owner', 'worker')
-        ) AS totalUsers,
+    (
+      SELECT COUNT(*)
+      FROM users
+      WHERE role IN ('owner', 'worker')
+    ) AS totalUsers,
 
-        (
-          SELECT COUNT(*)
-          FROM products
-          WHERE status = 'Active'
-            AND quantity <= 10
-        ) AS lowStockItems,
+    (
+      SELECT COUNT(*)
+      FROM products
+      WHERE status = 'Active'
+        AND quantity <= 10
+    ) AS lowStockItems,
 
-        (
-          SELECT COALESCE(SUM(grand_total), 0)
-          FROM customer_orders
-          WHERE order_status = 'Delivered'
-            AND created_at >= DATE_SUB(
-              CURDATE(),
-              INTERVAL WEEKDAY(CURDATE()) DAY
-            )
-            AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-        ) AS weekSales
-    `);
+    (
+      SELECT COALESCE(SUM(o.grand_total), 0)
+      FROM customer_orders o
+      INNER JOIN customer_payments p
+        ON p.id = (
+          SELECT MAX(p2.id)
+          FROM customer_payments p2
+          WHERE p2.order_id = o.id
+        )
+      WHERE p.payment_status = 'Approved'
+        AND o.order_status NOT IN ('Cancelled', 'Rejected')
+        AND COALESCE(p.reviewed_at, o.created_at)
+            >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+        AND COALESCE(p.reviewed_at, o.created_at)
+            < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+    ) AS weekSales
+`);
 
     const summary = summaryRows[0] || {};
 
@@ -71,17 +86,38 @@ async function getOwnerDashboard(req, res) {
     const today = dateRows[0].today;
 
     const salesRows = await queryRows(`
-      SELECT
-        DATE_FORMAT(created_at, '%Y-%m-%d') AS sales_date,
-        COALESCE(SUM(grand_total), 0) AS sales
-      FROM customer_orders
-      WHERE order_status = 'Delivered'
-        AND created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
-        AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-      GROUP BY DATE(created_at)
-      ORDER BY sales_date ASC
-    `);
+  SELECT
+    DATE_FORMAT(
+      COALESCE(p.reviewed_at, o.created_at),
+      '%Y-%m-%d'
+    ) AS sales_date,
 
+    COALESCE(SUM(o.grand_total), 0) AS sales
+
+  FROM customer_orders o
+
+  INNER JOIN customer_payments p
+    ON p.id = (
+      SELECT MAX(p2.id)
+      FROM customer_payments p2
+      WHERE p2.order_id = o.id
+    )
+
+  WHERE p.payment_status = 'Approved'
+    AND o.order_status NOT IN ('Cancelled', 'Rejected')
+
+    AND COALESCE(p.reviewed_at, o.created_at)
+        >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+
+    AND COALESCE(p.reviewed_at, o.created_at)
+        < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+
+  GROUP BY DATE(
+    COALESCE(p.reviewed_at, o.created_at)
+  )
+
+  ORDER BY sales_date ASC
+`);
     const salesMap = new Map(
       salesRows.map((row) => [
         row.sales_date,

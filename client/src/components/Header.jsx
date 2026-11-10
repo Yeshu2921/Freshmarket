@@ -5,6 +5,7 @@ import MyProfile from "../components/MyProfile";
 import "./Header.css";
 
 const API_ORIGIN = "http://localhost:5134";
+const API_BASE = `${API_ORIGIN}/api`;
 
 function getStoredUser() {
   try {
@@ -16,9 +17,12 @@ function getStoredUser() {
 
 function getPhotoUrl(path) {
   if (!path) return "";
-  if (/^(https?:\/\/|data:|blob:)/i.test(path)) return path;
 
-  return `${API_ORIGIN}/${path.replace(/^\/+/, "")}`;
+  if (/^(https?:\/\/|data:|blob:)/i.test(path)) {
+    return path;
+  }
+
+  return `${API_ORIGIN}/${String(path).replace(/^\/+/, "")}`;
 }
 
 function Header({
@@ -37,8 +41,42 @@ function Header({
   const [storedUser, setStoredUser] = useState(getStoredUser);
   const [photoFailed, setPhotoFailed] = useState(false);
 
+  // Website logo
+  const [logo, setLogo] = useState(null);
+
+  // Load stored user
   useEffect(() => {
     setStoredUser(getStoredUser());
+  }, []);
+
+  // Load the logo managed from Owner Settings
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function fetchLogo() {
+      try {
+        const response = await fetch(`${API_BASE}/homepage/logo`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to load website logo.");
+        }
+
+        const data = await response.json();
+
+        setLogo(data.logo || null);
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          console.warn("Homepage logo could not be loaded:", error);
+          setLogo(null);
+        }
+      }
+    }
+
+    fetchLogo();
+
+    return () => controller.abort();
   }, []);
 
   const user = userProp || storedUser || {};
@@ -50,6 +88,7 @@ function Header({
     "User";
 
   const displayRole = user.role || role;
+
   const roleLabel =
     displayRole.charAt(0).toUpperCase() + displayRole.slice(1);
 
@@ -67,13 +106,20 @@ function Header({
     [user.profile_image]
   );
 
+  const logoUrl = useMemo(
+    () => getPhotoUrl(logo?.image_path),
+    [logo?.image_path]
+  );
+
   useEffect(() => {
     setPhotoFailed(false);
   }, [photoUrl]);
 
   const unread = Number.isFinite(Number(unreadCount))
     ? Math.max(0, Number(unreadCount))
-    : notifications.filter((item) => !item.read && !item.is_read).length;
+    : notifications.filter(
+        (item) => !item.read && !item.is_read
+      ).length;
 
   function handleUserUpdated(updatedUser) {
     const nextUser = { ...user, ...updatedUser };
@@ -82,7 +128,9 @@ function Header({
     setStoredUser(nextUser);
     setPhotoFailed(false);
 
-    if (onUserUpdated) onUserUpdated(nextUser);
+    if (onUserUpdated) {
+      onUserUpdated(nextUser);
+    }
   }
 
   function Avatar({ large = false }) {
@@ -134,11 +182,24 @@ function Header({
 
             <div className="fm-brand">
               <div className="fm-brand-logo">
-                <i className="bi bi-shop" aria-hidden="true" />
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={logo?.image_name || "FreshMart Logo"}
+                    onError={() => setLogo(null)}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "contain",
+                    }}
+                  />
+                ) : (
+                  <i className="bi bi-shop" aria-hidden="true" />
+                )}
               </div>
 
               <div className="fm-header-title">
-                <h5>FreshMart</h5>
+                <h5>{logo?.image_name || "FreshMart"}</h5>
                 <span>Supermarket Management</span>
               </div>
             </div>
@@ -182,7 +243,9 @@ function Header({
             <Dropdown
               align="end"
               show={notificationsOpen}
-              onToggle={(nextOpen) => setNotificationsOpen(nextOpen)}
+              onToggle={(nextOpen) =>
+                setNotificationsOpen(nextOpen)
+              }
             >
               <Dropdown.Toggle
                 variant="link"
@@ -210,7 +273,10 @@ function Header({
 
                 {notifications.length === 0 ? (
                   <div className="fm-notification-empty">
-                    <i className="bi bi-bell-slash" aria-hidden="true" />
+                    <i
+                      className="bi bi-bell-slash"
+                      aria-hidden="true"
+                    />
                     <p>No new notifications</p>
                   </div>
                 ) : (
@@ -227,16 +293,21 @@ function Header({
                         <span className="fm-notification-item-icon">
                           <i className="bi bi-bell" />
                         </span>
+
                         <div>
                           <strong>
                             {item.title || "Notification"}
                           </strong>
+
                           <p>
                             {item.message || item.description || ""}
                           </p>
+
                           {item.created_at && (
                             <small>
-                              {new Date(item.created_at).toLocaleString()}
+                              {new Date(
+                                item.created_at
+                              ).toLocaleString()}
                             </small>
                           )}
                         </div>

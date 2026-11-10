@@ -245,3 +245,15 @@
     padding-left: 12px;
   }
 }
+.public-brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.public-brand-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}

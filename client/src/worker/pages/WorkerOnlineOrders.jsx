@@ -52,6 +52,16 @@ function getStatusClass(status) {
   }
 }
 
+// Detect Cash on Delivery payment method.
+function isCashOnDelivery(order) {
+  const method =
+    order?.recorded_payment_method ||
+    order?.payment_method ||
+    "";
+
+  return /cash\s*on\s*delivery/i.test(String(method).trim());
+}
+
 function WorkerOnlineOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +79,16 @@ function WorkerOnlineOrders() {
   const [showRejectBox, setShowRejectBox] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
+  // Payment confirmation states
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+
+  // Secure receipt preview states
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState("");
+  const [receiptPreviewLoading, setReceiptPreviewLoading] =
+    useState(false);
+  const [receiptPreviewError, setReceiptPreviewError] = useState("");
+
+  // Load orders
   async function loadOrders(isRefresh = false) {
     try {
       if (isRefresh) {
@@ -82,7 +102,9 @@ function WorkerOnlineOrders() {
       const token = getToken();
 
       if (!token) {
-        setError("Your login session was not found. Please log in again.");
+        setError(
+          "Your login session was not found. Please log in again."
+        );
         return;
       }
 
@@ -113,19 +135,40 @@ function WorkerOnlineOrders() {
     loadOrders();
   }, []);
 
+  // Clean up temporary receipt image URL.
+  useEffect(() => {
+    return () => {
+      if (receiptPreviewUrl) {
+        URL.revokeObjectURL(receiptPreviewUrl);
+      }
+    };
+  }, [receiptPreviewUrl]);
+
+  // Load order details and secure receipt image.
   async function openOrderDetails(orderId) {
     try {
       setSelectedOrder(null);
       setShowRejectBox(false);
       setRejectReason("");
+      setPaymentConfirmed(false);
+
+      setReceiptPreviewUrl("");
+      setReceiptPreviewError("");
+      setReceiptPreviewLoading(false);
+
       setDetailsLoading(true);
       setError("");
 
       const token = getToken();
 
+      if (!token) {
+        throw new Error("Your login session was not found.");
+      }
+
       const response = await fetch(
         `${API_BASE}/worker-orders/${orderId}`,
         {
+          method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -135,10 +178,70 @@ function WorkerOnlineOrders() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to load order details.");
+        throw new Error(
+          data.message || "Failed to load order details."
+        );
       }
 
-      setSelectedOrder(data.order);
+      const order = data.order;
+
+      setSelectedOrder(order);
+
+      // Cash on Delivery does not require a receipt.
+      if (
+        order.has_receipt &&
+        !isCashOnDelivery(order)
+      ) {
+        setReceiptPreviewLoading(true);
+
+        try {
+          const receiptResponse = await fetch(
+            `${API_BASE}/worker-orders/${orderId}/receipt`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          if (!receiptResponse.ok) {
+            let message = "Unable to load payment receipt.";
+
+            try {
+              const receiptData = await receiptResponse.json();
+              message = receiptData.message || message;
+            } catch {
+              // The server may return a non-JSON error.
+            }
+
+            throw new Error(message);
+          }
+
+          const contentType =
+            receiptResponse.headers.get("content-type") || "";
+
+          if (!contentType.startsWith("image/")) {
+            throw new Error(
+              "The receipt response is not a valid image."
+            );
+          }
+
+          const blob = await receiptResponse.blob();
+          const imageUrl = URL.createObjectURL(blob);
+
+          setReceiptPreviewUrl(imageUrl);
+        } catch (receiptError) {
+          console.error("Receipt preview error:", receiptError);
+
+          setReceiptPreviewError(
+            receiptError.message ||
+              "Unable to display the receipt."
+          );
+        } finally {
+          setReceiptPreviewLoading(false);
+        }
+      }
     } catch (err) {
       console.error("Order details error:", err);
       setError(err.message || "Unable to load order details.");
@@ -147,14 +250,39 @@ function WorkerOnlineOrders() {
     }
   }
 
+  // Approve order and payment together.
   async function approveSelectedOrder() {
     if (!selectedOrder) return;
 
-    const confirmed = window.confirm(
-      "Are you sure you want to approve this order? Product stock will be decreased."
-    );
+    if (selectedOrder.order_status !== "Pending") {
+      setError("Only pending orders can be approved.");
+      return;
+    }
 
-    if (!confirmed) return;
+    if (!paymentConfirmed) {
+      setError(
+        "Please confirm that the customer's payment has been received."
+      );
+      return;
+    }
+
+    const cashOrder = isCashOnDelivery(selectedOrder);
+
+    // Electronic payment requires an uploaded receipt.
+    if (!cashOrder && !selectedOrder.has_receipt) {
+      setError(
+        "This electronic payment has no uploaded receipt."
+      );
+      return;
+    }
+
+    const confirmationMessage = cashOrder
+      ? "Have you physically received and counted the full cash payment? Confirming will approve the order and payment and decrease product stock."
+      : "Have you verified the payment receipt and confirmed that the money was actually received? Confirming will approve the order and payment and decrease product stock.";
+
+    if (!window.confirm(confirmationMessage)) {
+      return;
+    }
 
     try {
       setActionLoading(true);
@@ -168,42 +296,63 @@ function WorkerOnlineOrders() {
         {
           method: "POST",
           headers: {
+            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
+          body: JSON.stringify({
+            paymentConfirmed: true,
+          }),
         }
       );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to approve order.");
+        throw new Error(
+          data.message || "Failed to approve order and payment."
+        );
       }
 
-      setSuccess(data.message || "Order approved successfully.");
+      setSuccess(
+        data.message ||
+          "Order and payment approved successfully."
+      );
+
       setSelectedOrder(null);
       setShowRejectBox(false);
+      setRejectReason("");
+      setPaymentConfirmed(false);
+      setReceiptPreviewUrl("");
+      setReceiptPreviewError("");
 
       await loadOrders(true);
     } catch (err) {
       console.error("Approve order error:", err);
-      setError(err.message || "Unable to approve this order.");
+      setError(
+        err.message || "Unable to approve this order."
+      );
     } finally {
       setActionLoading(false);
     }
   }
 
+  // Reject order
   async function rejectSelectedOrder() {
     if (!selectedOrder) return;
 
     const reason = rejectReason.trim();
 
     if (!reason) {
-      setError("Please enter a reason for rejecting this order.");
+      setError(
+        "Please enter a reason for rejecting this order."
+      );
       return;
     }
 
     if (reason.length > 500) {
-      setError("The rejection reason cannot exceed 500 characters.");
+      setError(
+        "The rejection reason cannot exceed 500 characters."
+      );
       return;
     }
 
@@ -229,23 +378,34 @@ function WorkerOnlineOrders() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to reject order.");
+        throw new Error(
+          data.message || "Failed to reject order."
+        );
       }
 
-      setSuccess(data.message || "Order rejected successfully.");
+      setSuccess(
+        data.message || "Order rejected successfully."
+      );
+
       setSelectedOrder(null);
       setShowRejectBox(false);
       setRejectReason("");
+      setPaymentConfirmed(false);
+      setReceiptPreviewUrl("");
+      setReceiptPreviewError("");
 
       await loadOrders(true);
     } catch (err) {
       console.error("Reject order error:", err);
-      setError(err.message || "Unable to reject this order.");
+      setError(
+        err.message || "Unable to reject this order."
+      );
     } finally {
       setActionLoading(false);
     }
   }
 
+  // Search and filter
   const filteredOrders = useMemo(() => {
     const searchText = search.trim().toLowerCase();
 
@@ -284,6 +444,9 @@ function WorkerOnlineOrders() {
     setSelectedOrder(null);
     setShowRejectBox(false);
     setRejectReason("");
+    setPaymentConfirmed(false);
+    setReceiptPreviewUrl("");
+    setReceiptPreviewError("");
   }
 
   return (
@@ -291,9 +454,13 @@ function WorkerOnlineOrders() {
       {/* Page heading */}
       <div className="wo-page-heading">
         <div>
-          <span className="wo-heading-label">ORDER MANAGEMENT</span>
+          <span className="wo-heading-label">
+            ORDER MANAGEMENT
+          </span>
           <h2>Online Orders</h2>
-          <p>Review customer orders and manage order approvals.</p>
+          <p>
+            Review customer orders and manage order approvals.
+          </p>
         </div>
 
         <button
@@ -379,6 +546,7 @@ function WorkerOnlineOrders() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+
           {search && (
             <button
               type="button"
@@ -395,13 +563,17 @@ function WorkerOnlineOrders() {
             <button
               type="button"
               key={filter}
-              className={activeFilter === filter ? "active" : ""}
+              className={
+                activeFilter === filter ? "active" : ""
+              }
               onClick={() => setActiveFilter(filter)}
             >
               {filter}
+
               {filter === "Pending" && (
                 <span>{pendingCount}</span>
               )}
+
               {filter === "Confirmed" && (
                 <span>{confirmedCount}</span>
               )}
@@ -415,8 +587,11 @@ function WorkerOnlineOrders() {
         <div className="wo-section-heading">
           <div>
             <h4>Recent Orders</h4>
-            <p>Pending orders and recently confirmed orders</p>
+            <p>
+              Pending orders and recently confirmed orders
+            </p>
           </div>
+
           <span className="wo-result-count">
             {filteredOrders.length} orders
           </span>
@@ -424,8 +599,13 @@ function WorkerOnlineOrders() {
 
         {loading ? (
           <div className="wo-loading">
-            <div className="spinner-border text-success" role="status">
-              <span className="visually-hidden">Loading...</span>
+            <div
+              className="spinner-border text-success"
+              role="status"
+            >
+              <span className="visually-hidden">
+                Loading...
+              </span>
             </div>
             <p>Loading customer orders...</p>
           </div>
@@ -455,22 +635,30 @@ function WorkerOnlineOrders() {
                     <div className="wo-customer-avatar">
                       <i className="bi bi-person"></i>
                     </div>
+
                     <div>
                       <strong>
                         {order.customer_name || "Customer"}
                       </strong>
-                      <span>{order.customer_phone || "No phone number"}</span>
+                      <span>
+                        {order.customer_phone ||
+                          "No phone number"}
+                      </span>
                     </div>
                   </div>
 
                   <div className="wo-order-info">
                     <span>Order Date</span>
-                    <strong>{formatDate(order.created_at)}</strong>
+                    <strong>
+                      {formatDate(order.created_at)}
+                    </strong>
                   </div>
 
                   <div className="wo-order-info">
                     <span>Items</span>
-                    <strong>{order.total_items || 0} products</strong>
+                    <strong>
+                      {order.total_items || 0} products
+                    </strong>
                   </div>
 
                   <div className="wo-order-info">
@@ -481,7 +669,11 @@ function WorkerOnlineOrders() {
                   </div>
 
                   <div className="wo-order-status">
-                    <span className={getStatusClass(order.order_status)}>
+                    <span
+                      className={getStatusClass(
+                        order.order_status
+                      )}
+                    >
                       {order.order_status}
                     </span>
                   </div>
@@ -490,8 +682,10 @@ function WorkerOnlineOrders() {
                 <div className="wo-order-footer">
                   <div className="wo-payment-info">
                     <i className="bi bi-credit-card"></i>
+
                     <span>
-                      {order.payment_method || "Payment not specified"}
+                      {order.payment_method ||
+                        "Payment not specified"}
                     </span>
 
                     {order.has_receipt ? (
@@ -505,7 +699,9 @@ function WorkerOnlineOrders() {
                   <button
                     type="button"
                     className="wo-details-btn"
-                    onClick={() => openOrderDetails(order.id)}
+                    onClick={() =>
+                      openOrderDetails(order.id)
+                    }
                   >
                     View Details
                     <i className="bi bi-arrow-right"></i>
@@ -522,7 +718,9 @@ function WorkerOnlineOrders() {
         <div
           className="wo-modal-backdrop"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget) closeDetails();
+            if (e.target === e.currentTarget) {
+              closeDetails();
+            }
           }}
         >
           <div
@@ -554,8 +752,13 @@ function WorkerOnlineOrders() {
 
             {detailsLoading ? (
               <div className="wo-loading wo-modal-loading">
-                <div className="spinner-border text-success" role="status">
-                  <span className="visually-hidden">Loading...</span>
+                <div
+                  className="spinner-border text-success"
+                  role="status"
+                >
+                  <span className="visually-hidden">
+                    Loading...
+                  </span>
                 </div>
                 <p>Loading order details...</p>
               </div>
@@ -585,21 +788,24 @@ function WorkerOnlineOrders() {
                       <div>
                         <span>Customer Name</span>
                         <strong>
-                          {selectedOrder.customer_name || "Not available"}
+                          {selectedOrder.customer_name ||
+                            "Not available"}
                         </strong>
                       </div>
 
                       <div>
                         <span>Phone Number</span>
                         <strong>
-                          {selectedOrder.customer_phone || "Not available"}
+                          {selectedOrder.customer_phone ||
+                            "Not available"}
                         </strong>
                       </div>
 
                       <div className="wo-full-width">
                         <span>Delivery Location</span>
                         <strong>
-                          {selectedOrder.delivery_location || "Not provided"}
+                          {selectedOrder.delivery_location ||
+                            "Not provided"}
                         </strong>
                       </div>
 
@@ -613,7 +819,8 @@ function WorkerOnlineOrders() {
                       <div>
                         <span>Payment Method</span>
                         <strong>
-                          {selectedOrder.payment_method || "Not specified"}
+                          {selectedOrder.payment_method ||
+                            "Not specified"}
                         </strong>
                       </div>
                     </div>
@@ -627,31 +834,41 @@ function WorkerOnlineOrders() {
                     </h5>
 
                     <div className="wo-detail-items">
-                      {(selectedOrder.items || []).map((item) => (
-                        <div className="wo-detail-item" key={item.id}>
-                          <div className="wo-item-image">
-                            {item.product_image ? (
-                              <img
-                                src={getImageUrl(item.product_image)}
-                                alt={item.product_name}
-                              />
-                            ) : (
-                              <i className="bi bi-image"></i>
-                            )}
-                          </div>
+                      {(selectedOrder.items || []).map(
+                        (item) => (
+                          <div
+                            className="wo-detail-item"
+                            key={item.id}
+                          >
+                            <div className="wo-item-image">
+                              {item.product_image ? (
+                                <img
+                                  src={getImageUrl(
+                                    item.product_image
+                                  )}
+                                  alt={item.product_name}
+                                />
+                              ) : (
+                                <i className="bi bi-image"></i>
+                              )}
+                            </div>
 
-                          <div className="wo-item-description">
-                            <strong>{item.product_name}</strong>
-                            <span>
-                              {formatMoney(item.unit_price)} × {item.quantity}
-                            </span>
-                          </div>
+                            <div className="wo-item-description">
+                              <strong>
+                                {item.product_name}
+                              </strong>
+                              <span>
+                                {formatMoney(item.unit_price)} ×{" "}
+                                {item.quantity}
+                              </span>
+                            </div>
 
-                          <strong className="wo-item-total">
-                            {formatMoney(item.line_total)}
-                          </strong>
-                        </div>
-                      ))}
+                            <strong className="wo-item-total">
+                              {formatMoney(item.line_total)}
+                            </strong>
+                          </div>
+                        )
+                      )}
                     </div>
                   </div>
 
@@ -664,9 +881,18 @@ function WorkerOnlineOrders() {
 
                     <div className="wo-detail-grid">
                       <div>
+                        <span>Payment Method</span>
+                        <strong>
+                          {selectedOrder.payment_method ||
+                            "Not specified"}
+                        </strong>
+                      </div>
+
+                      <div>
                         <span>Payment Status</span>
                         <strong>
-                          {selectedOrder.payment_status || "Pending"}
+                          {selectedOrder.payment_status ||
+                            "Pending"}
                         </strong>
                       </div>
 
@@ -679,21 +905,121 @@ function WorkerOnlineOrders() {
                       </div>
                     </div>
 
-                    {selectedOrder.has_receipt ? (
-                      <div className="wo-receipt-notice">
-                        <i className="bi bi-file-earmark-check"></i>
+                    {isCashOnDelivery(selectedOrder) ? (
+                      <div className="wo-payment-confirmation wo-cash-payment">
+                        <i className="bi bi-cash-coin"></i>
                         <div>
-                          <strong>Payment receipt uploaded</strong>
+                          <strong>Cash on Delivery</strong>
                           <p>
-                            Secure receipt preview will be available after
-                            the authenticated receipt endpoint is connected.
+                            The customer will pay in cash.
+                            Receive and count the full amount
+                            before approving this order.
                           </p>
                         </div>
                       </div>
+                    ) : selectedOrder.has_receipt ? (
+                      <div className="wo-receipt-area">
+                        <div className="wo-receipt-notice">
+                          <i className="bi bi-file-earmark-check"></i>
+                          <div>
+                            <strong>
+                              Payment receipt uploaded
+                            </strong>
+                            <p>
+                              Verify the receipt and confirm
+                              that the payment was actually
+                              received.
+                            </p>
+                          </div>
+                        </div>
+
+                        {receiptPreviewLoading && (
+                          <div className="wo-receipt-loading">
+                            <span className="spinner-border spinner-border-sm"></span>
+                            <span>
+                              Loading payment receipt...
+                            </span>
+                          </div>
+                        )}
+
+                        {receiptPreviewError && (
+                          <div
+                            className="wo-receipt-error"
+                            role="alert"
+                          >
+                            <i className="bi bi-exclamation-circle"></i>
+                            {receiptPreviewError}
+                          </div>
+                        )}
+
+                        {receiptPreviewUrl && (
+                          <div className="wo-receipt-preview">
+                            <p>Payment Receipt Preview</p>
+
+                            <a
+                              href={receiptPreviewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <img
+                                src={receiptPreviewUrl}
+                                alt="Customer payment receipt"
+                              />
+                            </a>
+
+                            <a
+                              className="wo-receipt-open-link"
+                              href={receiptPreviewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <i className="bi bi-box-arrow-up-right"></i>
+                              Open full receipt
+                            </a>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div className="wo-no-receipt">
-                        <i className="bi bi-info-circle"></i>
+                        <i className="bi bi-exclamation-circle"></i>
                         No payment receipt was uploaded.
+                        Electronic payment approval is unavailable.
+                      </div>
+                    )}
+
+                    {/* Worker payment confirmation */}
+                    {selectedOrder.order_status === "Pending" && (
+                      <div className="wo-payment-confirmation">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={paymentConfirmed}
+                            onChange={(e) => {
+                              setPaymentConfirmed(
+                                e.target.checked
+                              );
+                              setError("");
+                            }}
+                            disabled={
+                              actionLoading ||
+                              (!isCashOnDelivery(selectedOrder) &&
+                                (!selectedOrder.has_receipt ||
+                                  !receiptPreviewUrl))
+                            }
+                          />
+
+                          <span>
+                            {isCashOnDelivery(selectedOrder)
+                              ? "I confirm that I physically received and counted the full cash payment."
+                              : "I confirm that I verified the receipt and the electronic payment was actually received."}
+                          </span>
+                        </label>
+
+                        <small>
+                          The order and payment will be approved
+                          together. Product stock will also be
+                          decreased.
+                        </small>
                       </div>
                     )}
                   </div>
@@ -702,13 +1028,17 @@ function WorkerOnlineOrders() {
                   <div className="wo-total-section">
                     <div>
                       <span>Subtotal</span>
-                      <strong>{formatMoney(selectedOrder.subtotal)}</strong>
+                      <strong>
+                        {formatMoney(selectedOrder.subtotal)}
+                      </strong>
                     </div>
 
                     <div>
                       <span>Delivery Fee</span>
                       <strong>
-                        {formatMoney(selectedOrder.delivery_fee)}
+                        {formatMoney(
+                          selectedOrder.delivery_fee
+                        )}
                       </strong>
                     </div>
 
@@ -729,20 +1059,34 @@ function WorkerOnlineOrders() {
                       </h5>
 
                       <div className="wo-review-list">
-                        {selectedOrder.reviews.map((review) => (
-                          <div className="wo-review-item" key={review.id}>
-                            <div>
-                              <strong>{review.action}</strong>
-                              <span>
-                                Handled by: {review.handled_by || "Worker"}
-                              </span>
-                              {review.reason && (
-                                <p>Reason: {review.reason}</p>
-                              )}
+                        {selectedOrder.reviews.map(
+                          (review) => (
+                            <div
+                              className="wo-review-item"
+                              key={review.id}
+                            >
+                              <div>
+                                <strong>
+                                  {review.action}
+                                </strong>
+                                <span>
+                                  Handled by:{" "}
+                                  {review.handled_by || "Worker"}
+                                </span>
+
+                                {review.reason && (
+                                  <p>
+                                    Reason: {review.reason}
+                                  </p>
+                                )}
+                              </div>
+
+                              <small>
+                                {formatDate(review.created_at)}
+                              </small>
                             </div>
-                            <small>{formatDate(review.created_at)}</small>
-                          </div>
-                        ))}
+                          )
+                        )}
                       </div>
                     </div>
                   )}
@@ -754,15 +1098,21 @@ function WorkerOnlineOrders() {
                         <label htmlFor="wo-reject-reason">
                           Reason for rejection *
                         </label>
+
                         <textarea
                           id="wo-reject-reason"
                           rows="3"
                           maxLength="500"
                           placeholder="Explain why this order cannot be accepted..."
                           value={rejectReason}
-                          onChange={(e) => setRejectReason(e.target.value)}
+                          onChange={(e) =>
+                            setRejectReason(e.target.value)
+                          }
                         ></textarea>
-                        <small>{rejectReason.length}/500 characters</small>
+
+                        <small>
+                          {rejectReason.length}/500 characters
+                        </small>
                       </div>
                     )}
                 </div>
@@ -790,7 +1140,14 @@ function WorkerOnlineOrders() {
                             type="button"
                             className="wo-approve-btn"
                             onClick={approveSelectedOrder}
-                            disabled={actionLoading}
+                            disabled={
+                              actionLoading ||
+                              !paymentConfirmed ||
+                              (!isCashOnDelivery(selectedOrder) &&
+                                (!selectedOrder.has_receipt ||
+                                  !receiptPreviewUrl)) ||
+                              receiptPreviewLoading
+                            }
                           >
                             {actionLoading ? (
                               <>
@@ -800,7 +1157,7 @@ function WorkerOnlineOrders() {
                             ) : (
                               <>
                                 <i className="bi bi-check-circle"></i>
-                                Approve Order
+                                Approve Order & Payment
                               </>
                             )}
                           </button>
@@ -826,7 +1183,9 @@ function WorkerOnlineOrders() {
                             onClick={rejectSelectedOrder}
                             disabled={actionLoading}
                           >
-                            {actionLoading ? "Processing..." : "Confirm Rejection"}
+                            {actionLoading
+                              ? "Processing..."
+                              : "Confirm Rejection"}
                           </button>
                         </>
                       )}

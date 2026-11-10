@@ -1,9 +1,148 @@
 const db = require("../db");
+const fs = require("fs");
+const path = require("path");
+
+// ======================================================
+// PRIVATE PAYMENT RECEIPT HELPERS
+//
+// Allowed folder:
+// backend/private_uploads/customer/payment-receipts
+//
+// This folder must NOT be exposed using express.static().
+// ======================================================
+
+const backendRoot = path.resolve(__dirname, "..");
+
+const receiptDirectory = path.resolve(
+  backendRoot,
+  "private_uploads",
+  "customer",
+  "payment-receipts"
+);
+
+// Resolve a saved receipt path and reject paths outside
+// the permitted receipt directory.
+function getPrivateReceiptFile(receiptPath) {
+  if (typeof receiptPath !== "string" || !receiptPath.trim()) {
+    return null;
+  }
+
+  const savedPath = receiptPath.trim().replace(/\\/g, "/");
+
+  let filePath;
+
+  if (path.isAbsolute(savedPath)) {
+    filePath = path.resolve(savedPath);
+  } else {
+    const relativePath = savedPath.replace(/^\/+/, "");
+
+    if (
+      relativePath.startsWith(
+        "private_uploads/customer/payment-receipts/"
+      )
+    ) {
+      filePath = path.resolve(backendRoot, relativePath);
+    } else if (
+      relativePath.startsWith("customer/payment-receipts/")
+    ) {
+      filePath = path.resolve(
+        backendRoot,
+        "private_uploads",
+        relativePath
+      );
+    } else if (
+      relativePath !== "." &&
+      relativePath !== ".." &&
+      !relativePath.includes("/")
+    ) {
+      // Also support a filename stored by itself.
+      filePath = path.resolve(receiptDirectory, relativePath);
+    } else {
+      return null;
+    }
+  }
+
+  const relativePath = path.relative(receiptDirectory, filePath);
+
+  // Reject the directory itself, parent traversal, and
+  // every path outside the allowed folder.
+  if (
+    !relativePath ||
+    relativePath === ".." ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    return null;
+  }
+
+  return filePath;
+}
+
+// Resolve the real file path too. This prevents a symlink
+// inside the receipt folder from pointing outside it.
+async function getVerifiedPrivateReceiptFile(receiptPath) {
+  const filePath = getPrivateReceiptFile(receiptPath);
+
+  if (!filePath) {
+    return null;
+  }
+
+  try {
+    const realDirectory = await fs.promises.realpath(receiptDirectory);
+    const realFilePath = await fs.promises.realpath(filePath);
+
+    const relativePath = path.relative(
+      realDirectory,
+      realFilePath
+    );
+
+    if (
+      !relativePath ||
+      relativePath === ".." ||
+      relativePath.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativePath)
+    ) {
+      return null;
+    }
+
+    const stats = await fs.promises.stat(realFilePath);
+
+    if (!stats.isFile()) {
+      return null;
+    }
+
+    return realFilePath;
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.error("Receipt file verification error:", error);
+    }
+
+    return null;
+  }
+}
+
+// Delete a receipt only when it is inside the allowed folder.
+async function deletePrivateReceiptFile(receiptPath) {
+  const filePath = await getVerifiedPrivateReceiptFile(receiptPath);
+
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.error("Receipt file deletion warning:", error);
+    }
+  }
+}
 
 // ======================================================
 // GET /api/owner-orders
 // Get all customer orders for the owner.
 // ======================================================
+
 const getAllOwnerOrders = async (req, res) => {
   try {
     const [orders] = await db.query(
@@ -39,6 +178,26 @@ const getAllOwnerOrders = async (req, res) => {
             FROM customer_order_items coi
             WHERE coi.order_id = co.id
           ) AS total_items,
+
+          (
+            SELECT r.action
+            FROM customer_order_reviews r
+            WHERE r.order_id = co.id
+              AND r.action = 'Approved'
+            ORDER BY r.created_at DESC, r.id DESC
+            LIMIT 1
+          ) AS approved_review_action,
+
+          CASE
+            WHEN EXISTS (
+              SELECT 1
+              FROM customer_order_reviews r
+              WHERE r.order_id = co.id
+                AND r.action = 'Approved'
+            )
+            THEN 1
+            ELSE 0
+          END AS has_approved_review,
 
           (
             SELECT r.action
@@ -104,11 +263,11 @@ const getAllOwnerOrders = async (req, res) => {
   }
 };
 
-
 // ======================================================
 // GET /api/owner-orders/:orderId
 // Get complete details of one order.
 // ======================================================
+
 const getOwnerOrderDetails = async (req, res) => {
   try {
     const orderId = Number(req.params.orderId);
@@ -144,7 +303,13 @@ const getOwnerOrderDetails = async (req, res) => {
           pay.receipt_path,
           pay.rejection_reason AS payment_rejection_reason,
           pay.reviewed_by AS payment_reviewed_by,
-          pay.reviewed_at AS payment_reviewed_at
+          pay.reviewed_at AS payment_reviewed_at,
+
+          CONCAT(
+            reviewer.first_name,
+            ' ',
+            reviewer.last_name
+          ) AS reviewed_by_name
 
        FROM customer_orders co
 
@@ -157,6 +322,9 @@ const getOwnerOrderDetails = async (req, res) => {
             FROM customer_payments p2
             WHERE p2.order_id = co.id
           )
+
+       LEFT JOIN users reviewer
+          ON reviewer.id = pay.reviewed_by
 
        WHERE co.id = ?
        LIMIT 1`,
@@ -222,14 +390,123 @@ const getOwnerOrderDetails = async (req, res) => {
   }
 };
 
+// ======================================================
+// GET /api/owner-orders/:orderId/receipt
+//
+// Securely stream the private payment receipt.
+// The route must be protected by requireAuth and
+// requireOwner in ownerOrderRoutes.js.
+// ======================================================
+
+const getOwnerOrderReceipt = async (req, res) => {
+  try {
+    const orderId = Number(req.params.orderId);
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID.",
+      });
+    }
+
+    const [payments] = await db.query(
+      `SELECT receipt_path
+       FROM customer_payments
+       WHERE order_id = ?
+       ORDER BY id DESC
+       LIMIT 1`,
+      [orderId]
+    );
+
+    if (
+      payments.length === 0 ||
+      !payments[0].receipt_path
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: "No payment receipt was found for this order.",
+      });
+    }
+
+    const receiptPath = payments[0].receipt_path;
+
+    const verifiedFilePath =
+      await getVerifiedPrivateReceiptFile(receiptPath);
+
+    if (!verifiedFilePath) {
+      return res.status(404).json({
+        success: false,
+        message: "The payment receipt file was not found.",
+      });
+    }
+
+    // Only allow image receipt types.
+    const extension = path.extname(verifiedFilePath).toLowerCase();
+
+    const allowedExtensions = [
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".webp",
+      ".gif",
+      ".bmp",
+      ".avif",
+    ];
+
+    if (!allowedExtensions.includes(extension)) {
+      return res.status(415).json({
+        success: false,
+        message: "Unsupported receipt image format.",
+      });
+    }
+
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    return res.sendFile(verifiedFilePath, (error) => {
+      if (error) {
+        console.error("Send owner receipt error:", error);
+
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: "Failed to send the payment receipt.",
+          });
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Get owner payment receipt error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load the payment receipt.",
+    });
+  }
+};
 
 // ======================================================
 // DELETE /api/owner-orders/:orderId
-// Permanently delete any order and its related records.
-// Owner only.
+//
+// Owner can permanently delete only an order that:
+// 1. Has order_status = Confirmed.
+// 2. Has an Approved worker review.
+// 3. Has payment_status = Approved.
+//
+// Related order items and reviews are deleted through
+// their ON DELETE CASCADE foreign keys.
 // ======================================================
+
 const permanentlyDeleteOwnerOrder = async (req, res) => {
   const orderId = Number(req.params.orderId);
+  const userRole = String(req.user?.role || "").toLowerCase();
+
+  if (userRole !== "owner") {
+    return res.status(403).json({
+      success: false,
+      message: "Only the owner can delete confirmed orders.",
+    });
+  }
 
   if (!Number.isInteger(orderId) || orderId <= 0) {
     return res.status(400).json({
@@ -239,17 +516,19 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
   }
 
   let connection;
-  let transactionStarted = false;
+  let receiptPaths = [];
 
   try {
     connection = await db.getConnection();
-
     await connection.beginTransaction();
-    transactionStarted = true;
 
-    // Lock the order while deleting it.
+    // Lock the order while checking and deleting it.
     const [orders] = await connection.query(
-      `SELECT id, order_number, order_status
+      `SELECT
+          id,
+          order_number,
+          customer_id,
+          order_status
        FROM customer_orders
        WHERE id = ?
        FOR UPDATE`,
@@ -258,7 +537,6 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
 
     if (orders.length === 0) {
       await connection.rollback();
-      transactionStarted = false;
 
       return res.status(404).json({
         success: false,
@@ -268,50 +546,125 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
 
     const order = orders[0];
 
-    // Delete worker approval/rejection history.
-    await connection.query(
-      `DELETE FROM customer_order_reviews
-       WHERE order_id = ?`,
+    if (order.order_status !== "Confirmed") {
+      await connection.rollback();
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "The owner can permanently delete Confirmed orders only. Pending, rejected, preparing, ready, out for delivery, delivered, and cancelled orders are protected.",
+      });
+    }
+
+    // Lock all payment rows for this order.
+    const [payments] = await connection.query(
+      `SELECT
+          id,
+          payment_status,
+          receipt_path
+       FROM customer_payments
+       WHERE order_id = ?
+       ORDER BY id DESC
+       FOR UPDATE`,
       [orderId]
     );
 
-    // Delete ordered product records.
-    await connection.query(
-      `DELETE FROM customer_order_items
-       WHERE order_id = ?`,
+    if (
+      payments.length === 0 ||
+      payments[0].payment_status !== "Approved"
+    ) {
+      await connection.rollback();
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "This order cannot be deleted because its latest payment has not been approved.",
+      });
+    }
+
+    // Confirm that a worker approval review exists.
+    const [reviews] = await connection.query(
+      `SELECT id
+       FROM customer_order_reviews
+       WHERE order_id = ?
+         AND action = 'Approved'
+       LIMIT 1`,
       [orderId]
     );
 
-    // Delete payment records.
+    if (reviews.length === 0) {
+      await connection.rollback();
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "This order cannot be deleted because no worker approval record was found.",
+      });
+    }
+
+    receiptPaths = payments
+      .map((payment) => payment.receipt_path)
+      .filter(Boolean);
+
+    // Delete payments first because their FK uses
+    // ON DELETE RESTRICT.
     await connection.query(
       `DELETE FROM customer_payments
        WHERE order_id = ?`,
       [orderId]
     );
 
-    // Finally delete the main order.
+    // Delete the order. Its items and reviews are removed
+    // automatically by ON DELETE CASCADE.
     const [deleteResult] = await connection.query(
       `DELETE FROM customer_orders
-       WHERE id = ?`,
+       WHERE id = ?
+         AND order_status = 'Confirmed'`,
       [orderId]
     );
 
     if (deleteResult.affectedRows !== 1) {
-      throw new Error("The order could not be deleted.");
+      throw new Error("The confirmed order could not be deleted.");
+    }
+
+    // Delete customer profile only if there are no other orders.
+    if (order.customer_id) {
+      await connection.query(
+        `DELETE FROM customer_profiles
+         WHERE id = ?
+           AND NOT EXISTS (
+             SELECT 1
+             FROM customer_orders
+             WHERE customer_orders.customer_id = ?
+           )`,
+        [order.customer_id, order.customer_id]
+      );
     }
 
     await connection.commit();
-    transactionStarted = false;
+
+    // Remove private receipt files only after successful commit.
+    for (const receiptPath of receiptPaths) {
+      await deletePrivateReceiptFile(receiptPath);
+    }
 
     return res.status(200).json({
       success: true,
-      message: "Order and its related database records permanently deleted.",
+      message:
+        "Confirmed order and its related records permanently deleted.",
       orderId: order.id,
       orderNumber: order.order_number,
     });
   } catch (error) {
-    if (connection && transactionStarted) {
-      await connection.rollback();
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error(
+          "Owner deletion rollback error:",
+          rollbackError
+        );
+      }
     }
 
     console.error("Permanently delete owner order error:", error);
@@ -327,12 +680,13 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
   }
 };
 
-
 // ======================================================
 // EXPORT CONTROLLER FUNCTIONS
 // ======================================================
+
 module.exports = {
   getAllOwnerOrders,
   getOwnerOrderDetails,
+  getOwnerOrderReceipt,
   permanentlyDeleteOwnerOrder,
 };

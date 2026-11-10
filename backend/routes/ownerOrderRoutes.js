@@ -1,9 +1,11 @@
+
 const express = require("express");
 const router = express.Router();
 
 const {
   getAllOwnerOrders,
   getOwnerOrderDetails,
+  getOwnerOrderReceipt,
   permanentlyDeleteOwnerOrder,
 } = require("../controllers/ownerOrderController");
 
@@ -19,10 +21,14 @@ router.use(requireOwner);
 // Get all orders.
 router.get("/", getAllOwnerOrders);
 
+// Get private payment receipt.
+// Keep this route before the general order details route.
+router.get("/:orderId/receipt", getOwnerOrderReceipt);
+
 // Get one order with complete details.
 router.get("/:orderId", getOwnerOrderDetails);
 
-// Permanently delete any order.
+// Permanently delete an eligible order.
 router.delete("/:orderId", permanentlyDeleteOwnerOrder);
 
 module.exports = router;

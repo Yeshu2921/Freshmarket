@@ -5,27 +5,16 @@ const crypto = require("crypto");
 const fs = require("fs/promises");
 const path = require("path");
 
-const { receiptDirectory } = require("../middleware/customerOrderUpload");
-
-const PAYMENT_METHODS = new Set([
-  "Cash on Delivery",
-  "CBE",
-  "CBE Birr",
-  "Dashen Bank",
-  "Telebirr",
-  "Bank of Abyssinia",
-  "Awash Bank",
-  "Cibbirr",
-]);
-
 const CASH_METHOD = "Cash on Delivery";
 
+// Remove an uploaded receipt if order creation fails.
 function removeUploadedReceipt(file) {
   if (!file?.path) return Promise.resolve();
 
   return fs.unlink(file.path).catch(() => {});
 }
 
+// Generate a unique order number.
 function createOrderNumber() {
   const date = new Date()
     .toISOString()
@@ -35,6 +24,7 @@ function createOrderNumber() {
   return `FM-${date}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 }
 
+// Validate and combine requested products.
 function normalizeItems(value) {
   let items = value;
 
@@ -82,37 +72,125 @@ function normalizeItems(value) {
   }));
 }
 
+// Always use selling_price for customer orders.
+// discount_price is only the original price displayed to customers.
 function getTrustedUnitPrice(product) {
   const sellingPrice = Number(product.selling_price);
-  const discountPrice =
-    product.discount_price === null
-      ? null
-      : Number(product.discount_price);
 
-  if (
-    discountPrice !== null &&
-    Number.isFinite(discountPrice) &&
-    discountPrice > 0 &&
-    discountPrice < sellingPrice
-  ) {
-    return discountPrice;
+  if (!Number.isFinite(sellingPrice) || sellingPrice < 0) {
+    throw new Error("Invalid product selling price");
   }
 
   return sellingPrice;
 }
 
+// Find or create a customer profile.
+//
+// Rules:
+// Same phone + same PIN = reuse existing profile.
+// Same phone + different PIN = create new profile.
+// Different phone + same PIN = create new profile.
+//
+// A MySQL named lock serializes profile creation for the same phone.
+async function findOrCreateCustomerProfile(
+  connection,
+  fullName,
+  phone,
+  pin
+) {
+  const lockName = `fm_customer_${crypto
+    .createHash("sha256")
+    .update(phone)
+    .digest("hex")
+    .slice(0, 40)}`;
+
+  const [lockRows] = await connection.execute(
+    "SELECT GET_LOCK(?, 10) AS acquired",
+    [lockName]
+  );
+
+  if (Number(lockRows[0]?.acquired) !== 1) {
+    throw Object.assign(
+      new Error("Customer profile is busy. Please try again."),
+      { statusCode: 503 }
+    );
+  }
+
+  try {
+    // Find every profile using this phone number.
+    const [existingProfiles] = await connection.execute(
+      `SELECT id, full_name, phone, pin_hash
+       FROM customer_profiles
+       WHERE phone = ?
+       ORDER BY id ASC
+       FOR UPDATE`,
+      [phone]
+    );
+
+    // Compare the submitted PIN with each existing profile.
+    for (const profile of existingProfiles) {
+      if (!profile.pin_hash) continue;
+
+      const pinMatches = await bcrypt.compare(
+        pin,
+        profile.pin_hash
+      );
+
+      if (pinMatches) {
+        // Same phone and same PIN.
+        // Reuse this customer profile.
+        await connection.execute(
+          `UPDATE customer_profiles
+           SET full_name = ?
+           WHERE id = ?`,
+          [fullName, profile.id]
+        );
+
+        return profile.id;
+      }
+    }
+
+    // No matching phone + PIN combination exists.
+    // Create a separate customer profile.
+    const pinHash = await bcrypt.hash(pin, 12);
+
+    const [profileResult] = await connection.execute(
+      `INSERT INTO customer_profiles
+         (full_name, phone, pin_hash)
+       VALUES (?, ?, ?)`,
+      [fullName, phone, pinHash]
+    );
+
+    return profileResult.insertId;
+  } finally {
+    // Release the named lock even if profile creation fails.
+    await connection.execute(
+      "SELECT RELEASE_LOCK(?)",
+      [lockName]
+    ).catch(() => {});
+  }
+}
+
 // POST /api/customer-orders
 async function createCustomerOrder(req, res) {
-  const fullName = String(req.body.fullName || "").trim();
-  const phone = String(req.body.phone || "").trim();
+  const body = req.body || {};
+
+  const fullName = String(body.fullName || "").trim();
+  const phone = String(body.phone || "").replace(/\s+/g, "");
   const deliveryLocation =
-    String(req.body.deliveryLocation || "").trim() || null;
-  const pin = String(req.body.pin || "");
-  const paymentMethod = String(req.body.paymentMethod || "").trim();
-  const items = normalizeItems(req.body.items);
+    String(body.deliveryLocation || "").trim() || null;
+
+  const pin = String(body.pin || "").trim();
+
+  const paymentMethod = String(
+    body.paymentMethod || ""
+  ).trim();
+
+  const items = normalizeItems(body.items);
 
   const isCash = paymentMethod === CASH_METHOD;
 
+  // Validate customer information.
   if (
     !fullName ||
     fullName.length > 150 ||
@@ -128,6 +206,7 @@ async function createCustomerOrder(req, res) {
     });
   }
 
+  // Validate PIN.
   if (!/^\d{4,6}$/.test(pin)) {
     await removeUploadedReceipt(req.file);
 
@@ -137,7 +216,8 @@ async function createCustomerOrder(req, res) {
     });
   }
 
-  if (!PAYMENT_METHODS.has(paymentMethod)) {
+  // Validate payment method.
+  if (!paymentMethod || paymentMethod.length > 100) {
     await removeUploadedReceipt(req.file);
 
     return res.status(400).json({
@@ -146,6 +226,7 @@ async function createCustomerOrder(req, res) {
     });
   }
 
+  // Validate product list.
   if (!items) {
     await removeUploadedReceipt(req.file);
 
@@ -155,6 +236,7 @@ async function createCustomerOrder(req, res) {
     });
   }
 
+  // Electronic payment requires a receipt.
   if (!isCash && !req.file) {
     return res.status(400).json({
       success: false,
@@ -162,6 +244,7 @@ async function createCustomerOrder(req, res) {
     });
   }
 
+  // Cash on delivery does not require a receipt.
   if (isCash && req.file) {
     await removeUploadedReceipt(req.file);
 
@@ -180,25 +263,40 @@ async function createCustomerOrder(req, res) {
     await connection.beginTransaction();
     transactionStarted = true;
 
-    const pinHash = await bcrypt.hash(pin, 12);
+    // Validate electronic payment methods.
+    // Only owner-created active payment methods are accepted.
+    if (!isCash) {
+      const [availableMethods] = await connection.execute(
+        `SELECT id
+         FROM payment_methods
+         WHERE method_name = ?
+           AND is_active = 1
+         LIMIT 1`,
+        [paymentMethod]
+      );
 
-    // Phone is unique in customer_profiles.
-    // A new order using the same phone updates the customer's PIN.
-    const [profileResult] = await connection.execute(
-      `INSERT INTO customer_profiles (full_name, phone, pin_hash)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         id = LAST_INSERT_ID(id),
-         full_name = VALUES(full_name),
-         pin_hash = VALUES(pin_hash)`,
-      [fullName, phone, pinHash]
+      if (availableMethods.length === 0) {
+        throw Object.assign(
+          new Error(
+            "This payment method is unavailable. Please select another payment method."
+          ),
+          { statusCode: 400 }
+        );
+      }
+    }
+
+    // Find an existing matching profile or create a new one.
+    const customerId = await findOrCreateCustomerProfile(
+      connection,
+      fullName,
+      phone,
+      pin
     );
-
-    const customerId = profileResult.insertId;
 
     let subtotal = 0;
     const orderItems = [];
 
+    // Validate products and current stock.
     for (const requestedItem of items) {
       const [products] = await connection.execute(
         `SELECT
@@ -224,44 +322,46 @@ async function createCustomerOrder(req, res) {
 
       if (!products.length) {
         throw Object.assign(
-          new Error(`Product ${requestedItem.productId} was not found.`),
+          new Error(
+            `Product ${requestedItem.productId} was not found.`
+          ),
           { statusCode: 400 }
         );
       }
 
       const product = products[0];
 
-      if (String(product.status).trim().toLowerCase() !== "active") {
+      if (
+        String(product.status).trim().toLowerCase() !== "active"
+      ) {
         throw Object.assign(
-          new Error(`${product.name} is not currently available.`),
+          new Error(
+            `${product.name} is not currently available.`
+          ),
           { statusCode: 400 }
         );
       }
 
-      // Check current stock when placing the order.
-      // Stock will NOT be decreased here.
-      // The worker approval process will check stock again.
+      // Check stock when placing the order.
+      // Stock is deducted only after worker approval.
       if (Number(product.quantity) < requestedItem.quantity) {
         throw Object.assign(
-          new Error(`Not enough stock is available for ${product.name}.`),
+          new Error(
+            `Not enough stock is available for ${product.name}.`
+          ),
           { statusCode: 400 }
         );
       }
 
       const unitPrice = getTrustedUnitPrice(product);
 
-      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-        throw Object.assign(
-          new Error(`Invalid price for ${product.name}.`),
-          { statusCode: 400 }
-        );
-      }
-
       const lineTotal = Number(
         (unitPrice * requestedItem.quantity).toFixed(2)
       );
 
-      subtotal = Number((subtotal + lineTotal).toFixed(2));
+      subtotal = Number(
+        (subtotal + lineTotal).toFixed(2)
+      );
 
       orderItems.push({
         productId: product.id,
@@ -273,11 +373,16 @@ async function createCustomerOrder(req, res) {
       });
     }
 
-    // Delivery fee is currently zero until your delivery-fee rules are set.
+    // Delivery fee is currently zero.
     const deliveryFee = 0;
-    const grandTotal = Number((subtotal + deliveryFee).toFixed(2));
+
+    const grandTotal = Number(
+      (subtotal + deliveryFee).toFixed(2)
+    );
+
     const orderNumber = createOrderNumber();
 
+    // Create a new order for every successful submission.
     const [orderResult] = await connection.execute(
       `INSERT INTO customer_orders (
          order_number,
@@ -303,6 +408,7 @@ async function createCustomerOrder(req, res) {
 
     const orderId = orderResult.insertId;
 
+    // Save order products.
     for (const item of orderItems) {
       await connection.execute(
         `INSERT INTO customer_order_items (
@@ -326,16 +432,15 @@ async function createCustomerOrder(req, res) {
         ]
       );
 
-      // IMPORTANT:
       // Do not update products.quantity here.
       // Do not update products.quantity_sold here.
       // Both updates happen only after worker approval.
     }
 
+    // Save the private receipt path.
     let receiptPath = null;
 
     if (req.file) {
-      // Save only the relative private path in the database.
       receiptPath = path
         .relative(
           path.join(__dirname, "..", "private_uploads"),
@@ -345,8 +450,7 @@ async function createCustomerOrder(req, res) {
         .join("/");
     }
 
-    // Both electronic payments and cash payments start as Pending.
-    // Cash is not marked paid until it is actually received.
+    // Create pending payment record.
     await connection.execute(
       `INSERT INTO customer_payments (
          order_id,
@@ -356,9 +460,15 @@ async function createCustomerOrder(req, res) {
          payment_status
        )
        VALUES (?, ?, ?, ?, 'Pending')`,
-      [orderId, paymentMethod, grandTotal, receiptPath]
+      [
+        orderId,
+        paymentMethod,
+        grandTotal,
+        receiptPath,
+      ]
     );
 
+    // Commit the complete order.
     await connection.commit();
     transactionStarted = false;
 
@@ -406,7 +516,9 @@ async function createCustomerOrder(req, res) {
       message: "Could not place your order. Please try again.",
     });
   } finally {
-    if (connection) connection.release();
+    if (connection) {
+      connection.release();
+    }
   }
 }
 

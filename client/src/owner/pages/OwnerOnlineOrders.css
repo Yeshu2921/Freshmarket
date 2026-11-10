@@ -986,3 +986,31 @@
     width: 100%;
   }
 }
+.owner-online-orders {
+  width: 100%;
+  min-width: 0;
+}
+
+.owner-order-receipt {
+  max-width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  border: 1px solid #dee2e6;
+  padding: 5px;
+  background: #fff;
+}
+
+.owner-online-orders .table th,
+.owner-online-orders .table td {
+  vertical-align: middle;
+}
+
+@media (max-width: 576px) {
+  .owner-online-orders .card-body {
+    padding: 12px;
+  }
+
+  .owner-order-receipt {
+    max-height: 350px;
+  }
+}

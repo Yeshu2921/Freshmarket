@@ -2,14 +2,12 @@
 const db = require("../db");
 
 // --------------------------------------------------
-// Helpers
+// HELPERS
 // --------------------------------------------------
 
 async function queryRows(sql, params = []) {
   const result = await db.query(sql, params);
 
-  // Supports mysql2/promise: [rows, fields].
-  // Also supports drivers that return rows directly.
   return Array.isArray(result) && Array.isArray(result[0])
     ? result[0]
     : result;
@@ -71,20 +69,45 @@ function getDateRange(req, res) {
 }
 
 // --------------------------------------------------
+// APPROVED SALES RULE
+//
+// Only the latest payment record is checked.
+// Payment must be Approved.
+// Order must not be Pending, Rejected, or Cancelled.
+// --------------------------------------------------
+
+const APPROVED_SALES_JOIN = `
+  INNER JOIN customer_payments p
+    ON p.id = (
+      SELECT MAX(p2.id)
+      FROM customer_payments p2
+      WHERE p2.order_id = o.id
+    )
+    AND p.payment_status = 'Approved'
+`;
+
+const APPROVED_SALES_CONDITION = `
+  AND o.order_status NOT IN (
+    'Pending',
+    'Rejected',
+    'Cancelled'
+  )
+`;
+
+// --------------------------------------------------
 // 1. REPORT SUMMARY
 // GET /api/owner-reports/summary
 // --------------------------------------------------
 
 const getReportSummary = async (req, res) => {
   try {
-    const sql = `
+    const salesSql = `
       SELECT
         COALESCE(
           SUM(
             CASE
-              WHEN order_status = 'Delivered'
-              AND DATE(created_at) = CURDATE()
-              THEN grand_total
+              WHEN DATE(o.created_at) = CURDATE()
+              THEN o.grand_total
               ELSE 0
             END
           ), 0
@@ -93,31 +116,43 @@ const getReportSummary = async (req, res) => {
         COALESCE(
           SUM(
             CASE
-              WHEN order_status = 'Delivered'
-              AND YEAR(created_at) = YEAR(CURDATE())
-              AND MONTH(created_at) = MONTH(CURDATE())
-              THEN grand_total
+              WHEN YEAR(o.created_at) = YEAR(CURDATE())
+              AND MONTH(o.created_at) = MONTH(CURDATE())
+              THEN o.grand_total
               ELSE 0
             END
           ), 0
-        ) AS monthly_sales,
+        ) AS monthly_sales
 
-        COALESCE(
-          SUM(
-            CASE
-              WHEN order_status = 'Delivered'
-              THEN 1
-              ELSE 0
-            END
-          ), 0
+      FROM customer_orders o
+
+      ${APPROVED_SALES_JOIN}
+
+      WHERE 1 = 1
+      ${APPROVED_SALES_CONDITION}
+    `;
+
+    const salesRows = await queryRows(salesSql);
+
+    // Completed orders use approved payment + valid order status.
+    // Pending and rejected counts are independent of payment.
+    const countSql = `
+      SELECT
+        (
+          SELECT COUNT(*)
+          FROM customer_orders o
+
+          ${APPROVED_SALES_JOIN}
+
+          WHERE 1 = 1
+          ${APPROVED_SALES_CONDITION}
         ) AS completed_orders,
 
         COALESCE(
           SUM(
             CASE
               WHEN order_status = 'Rejected'
-              THEN 1
-              ELSE 0
+              THEN 1 ELSE 0
             END
           ), 0
         ) AS rejected_orders,
@@ -126,8 +161,7 @@ const getReportSummary = async (req, res) => {
           SUM(
             CASE
               WHEN order_status = 'Pending'
-              THEN 1
-              ELSE 0
+              THEN 1 ELSE 0
             END
           ), 0
         ) AS pending_orders
@@ -135,11 +169,14 @@ const getReportSummary = async (req, res) => {
       FROM customer_orders
     `;
 
-    const rows = await queryRows(sql);
+    const countRows = await queryRows(countSql);
 
     return res.json({
       success: true,
-      summary: rows[0],
+      summary: {
+        ...salesRows[0],
+        ...countRows[0],
+      },
     });
   } catch (error) {
     return handleError(
@@ -154,10 +191,7 @@ const getReportSummary = async (req, res) => {
 // 2. DAILY, WEEKLY AND MONTHLY SALES
 // GET /api/owner-reports/sales
 //
-// Query parameters:
 // period=daily | weekly | monthly
-// startDate=YYYY-MM-DD
-// endDate=YYYY-MM-DD
 // --------------------------------------------------
 
 const getSalesReport = async (req, res) => {
@@ -166,17 +200,21 @@ const getSalesReport = async (req, res) => {
 
     if (!range) return;
 
-    const period = String(req.query.period || "daily").toLowerCase();
+    const period = String(
+      req.query.period || "daily"
+    ).toLowerCase();
 
     const groupFormats = {
-      daily: "DATE(created_at)",
+      daily: "DATE(o.created_at)",
+
       weekly: `
         DATE_SUB(
-          DATE(created_at),
-          INTERVAL WEEKDAY(created_at) DAY
+          DATE(o.created_at),
+          INTERVAL WEEKDAY(o.created_at) DAY
         )
       `,
-      monthly: "DATE_FORMAT(created_at, '%Y-%m')",
+
+      monthly: "DATE_FORMAT(o.created_at, '%Y-%m')",
     };
 
     if (!groupFormats[period]) {
@@ -191,16 +229,22 @@ const getSalesReport = async (req, res) => {
     const sql = `
       SELECT
         ${groupBy} AS period,
-        COALESCE(SUM(grand_total), 0) AS total_sales,
-        COUNT(*) AS total_orders
 
-      FROM customer_orders
+        COALESCE(SUM(o.grand_total), 0) AS total_sales,
 
-      WHERE order_status = 'Delivered'
-      AND created_at >= ?
-      AND created_at < DATE_ADD(?, INTERVAL 1 DAY)
+        COUNT(DISTINCT o.id) AS total_orders
+
+      FROM customer_orders o
+
+      ${APPROVED_SALES_JOIN}
+
+      WHERE o.created_at >= ?
+      AND o.created_at < DATE_ADD(?, INTERVAL 1 DAY)
+
+      ${APPROVED_SALES_CONDITION}
 
       GROUP BY period
+
       ORDER BY period ASC
     `;
 
@@ -213,6 +257,7 @@ const getSalesReport = async (req, res) => {
       (result, row) => ({
         totalSales:
           result.totalSales + Number(row.total_sales || 0),
+
         totalOrders:
           result.totalOrders + Number(row.total_orders || 0),
       }),
@@ -241,11 +286,6 @@ const getSalesReport = async (req, res) => {
 // --------------------------------------------------
 // 3. BEST-SELLING PRODUCTS
 // GET /api/owner-reports/best-selling
-//
-// Query parameters:
-// startDate=YYYY-MM-DD
-// endDate=YYYY-MM-DD
-// limit=10
 // --------------------------------------------------
 
 const getBestSellingProducts = async (req, res) => {
@@ -271,19 +311,28 @@ const getBestSellingProducts = async (req, res) => {
       SELECT
         oi.product_id,
         oi.product_name,
+
         SUM(oi.quantity) AS units_sold,
-        COALESCE(SUM(oi.line_total), 0) AS total_revenue
+
+        COALESCE(
+          SUM(oi.line_total), 0
+        ) AS total_revenue
 
       FROM customer_order_items oi
 
       INNER JOIN customer_orders o
         ON o.id = oi.order_id
 
-      WHERE o.order_status = 'Delivered'
-      AND o.created_at >= ?
+      ${APPROVED_SALES_JOIN}
+
+      WHERE o.created_at >= ?
       AND o.created_at < DATE_ADD(?, INTERVAL 1 DAY)
 
-      GROUP BY oi.product_id, oi.product_name
+      ${APPROVED_SALES_CONDITION}
+
+      GROUP BY
+        oi.product_id,
+        oi.product_name
 
       ORDER BY units_sold DESC
 
@@ -314,9 +363,6 @@ const getBestSellingProducts = async (req, res) => {
 // --------------------------------------------------
 // 4. LOW-STOCK PRODUCTS
 // GET /api/owner-reports/low-stock
-//
-// Query parameters:
-// threshold=10
 // --------------------------------------------------
 
 const getLowStockProducts = async (req, res) => {
@@ -376,13 +422,16 @@ const getLowStockProducts = async (req, res) => {
 };
 
 // --------------------------------------------------
-// 5. COMPLETED AND REJECTED ORDER REPORTS
+// 5. COMPLETED SALES AND REJECTED ORDERS
 // GET /api/owner-reports/orders
 //
-// Query parameters:
-// status=Delivered | Rejected | All
-// startDate=YYYY-MM-DD
-// endDate=YYYY-MM-DD
+// status=Completed | Delivered | Rejected | All
+//
+// Completed = latest payment Approved
+//             AND order not Pending/Rejected/Cancelled.
+//
+// Delivered is temporarily supported as an alias
+// for Completed to keep the existing frontend working.
 // --------------------------------------------------
 
 const getOrderStatusReport = async (req, res) => {
@@ -391,30 +440,69 @@ const getOrderStatusReport = async (req, res) => {
 
     if (!range) return;
 
-    const status = String(req.query.status || "All");
+    const status = String(
+      req.query.status || "All"
+    );
 
-    const allowedStatuses = ["All", "Delivered", "Rejected"];
+    const allowedStatuses = [
+      "All",
+      "Completed",
+      "Delivered",
+      "Rejected",
+    ];
 
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
-        message: "Status must be All, Delivered, or Rejected.",
+        message:
+          "Status must be All, Completed, Delivered, or Rejected.",
       });
     }
-
-    let statusCondition = "";
 
     const params = [
       range.startDate,
       range.endDate,
     ];
 
-    if (status !== "All") {
-      statusCondition = "AND o.order_status = ?";
-      params.push(status);
-    } else {
+    let statusCondition = "";
+    let paymentJoin = "";
+
+    if (status === "Completed" || status === "Delivered") {
+      // Delivered is accepted as an old frontend alias.
+      paymentJoin = `
+        ${APPROVED_SALES_JOIN}
+      `;
+
       statusCondition = `
-        AND o.order_status IN ('Delivered', 'Rejected')
+        ${APPROVED_SALES_CONDITION}
+      `;
+    } else if (status === "Rejected") {
+      statusCondition = `
+        AND o.order_status = 'Rejected'
+      `;
+    } else {
+      // All = approved completed sales + rejected orders.
+      paymentJoin = `
+        LEFT JOIN customer_payments p
+          ON p.id = (
+            SELECT MAX(p2.id)
+            FROM customer_payments p2
+            WHERE p2.order_id = o.id
+          )
+      `;
+
+      statusCondition = `
+        AND (
+          (
+            p.payment_status = 'Approved'
+            AND o.order_status NOT IN (
+              'Pending',
+              'Rejected',
+              'Cancelled'
+            )
+          )
+          OR o.order_status = 'Rejected'
+        )
       `;
     }
 
@@ -442,6 +530,8 @@ const getOrderStatusReport = async (req, res) => {
 
       FROM customer_orders o
 
+      ${paymentJoin}
+
       WHERE o.created_at >= ?
       AND o.created_at < DATE_ADD(?, INTERVAL 1 DAY)
 
@@ -453,7 +543,10 @@ const getOrderStatusReport = async (req, res) => {
     const rows = await queryRows(sql, params);
 
     const completedCount = rows.filter(
-      (order) => order.order_status === "Delivered"
+      (order) =>
+        order.order_status !== "Pending" &&
+        order.order_status !== "Rejected" &&
+        order.order_status !== "Cancelled"
     ).length;
 
     const rejectedCount = rows.filter(
@@ -463,10 +556,12 @@ const getOrderStatusReport = async (req, res) => {
     return res.json({
       success: true,
       dateRange: range,
+
       summary: {
         completedOrders: completedCount,
         rejectedOrders: rejectedCount,
       },
+
       count: rows.length,
       orders: rows,
     });

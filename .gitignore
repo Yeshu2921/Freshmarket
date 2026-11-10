@@ -13,9 +13,8 @@ build/
 # Logs
 *.log
 
-# Uploaded files
-backend/uploads/
-backend/public/images/homepage/
+
+
 
 # Editor and OS files
 .vscode/
