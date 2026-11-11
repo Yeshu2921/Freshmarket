@@ -20,10 +20,17 @@ import OwnerLayout from "./layouts/OwnerLayout";
 import NotFound from "./components/NotFound";
 import OrderPage from "./pages/OrderPage";
 import YourOrders from "./pages/YourOrders";
+import About from "./pages/About";
+import Contact from "./pages/Contact";
+
+import { NotificationProvider } from "./context/NotificationContext";
 
 import "./App.css";
 
-// Protect owner and worker pages.
+// =============================================
+// PROTECTED ROUTE
+// =============================================
+
 function ProtectedRoute({ currentUser, requiredRole, children }) {
   const token = sessionStorage.getItem("freshmartToken");
 
@@ -46,10 +53,14 @@ function ProtectedRoute({ currentUser, requiredRole, children }) {
   return children;
 }
 
+// =============================================
+// APP
+// =============================================
+
 function App() {
   const navigate = useNavigate();
 
-  // Restore the logged-in user after a browser refresh.
+  // Restore logged-in user after browser refresh.
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const savedUser = sessionStorage.getItem("freshmartUser");
@@ -69,7 +80,10 @@ function App() {
       .join(" ") ||
     "User";
 
-  // Save the session after successful login.
+  // =============================================
+  // LOGIN
+  // =============================================
+
   function handleLogin(user, token) {
     if (!user || !token) {
       console.error("Login failed: user or token is missing.");
@@ -95,7 +109,10 @@ function App() {
     }
   }
 
-  // Clear the session when logging out.
+  // =============================================
+  // LOGOUT
+  // =============================================
+
   function handleLogout() {
     sessionStorage.removeItem("freshmartToken");
     sessionStorage.removeItem("freshmartUser");
@@ -104,93 +121,102 @@ function App() {
     navigate("/login", { replace: true });
   }
 
-  // Choose the correct dashboard.
+  // =============================================
+  // DASHBOARD PATH
+  // =============================================
+
   function getDashboardPath() {
     return currentUser?.role === "owner"
       ? "/owner/dashboard"
       : "/worker/dashboard";
   }
 
+  // =============================================
+  // APPLICATION ROUTES
+  // =============================================
+
   return (
-    <Routes>
-      {/* Public pages share the same header and footer. */}
-      <Route element={<HomeLayout />}>
-        <Route path="/" element={<HomePage />} />
+    <NotificationProvider user={currentUser}>
+      <Routes>
+        {/* PUBLIC PAGES */}
+        <Route element={<HomeLayout />}>
+          <Route path="/" element={<HomePage />} />
+
+          <Route
+            path="/market"
+            element={<AllPublicProducts />}
+          />
+       <Route path="/about" element={<About />} />
+       <Route path="/contact" element={<Contact />} />
+          <Route path="/order" element={<OrderPage />} />
+
+          <Route path="/your-orders" element={<YourOrders />} />
+
+          <Route path="/cart" element={<Cart />} />
+        </Route>
+
+        {/* LOGIN */}
+        <Route
+          path="/login"
+          element={
+            currentUser &&
+            sessionStorage.getItem("freshmartToken") ? (
+              <Navigate to={getDashboardPath()} replace />
+            ) : (
+              <OwnerLogin onLogin={handleLogin} />
+            )
+          }
+        />
+
+        {/* PASSWORD RECOVERY */}
+        <Route
+          path="/forgot-password"
+          element={<ForgotPassword />}
+        />
 
         <Route
-          path="/market"
-          element={<AllPublicProducts />}
+          path="/reset-password"
+          element={<ResetPassword />}
         />
-         <Route path="/order" element={<OrderPage />} />
-         <Route path="/your-orders" element={<YourOrders />} />
-        {/* Customer shopping cart and payment selection. */}
+
+        {/* OWNER */}
         <Route
-          path="/cart"
-          element={<Cart />}
+          path="/owner/dashboard"
+          element={
+            <ProtectedRoute
+              currentUser={currentUser}
+              requiredRole="owner"
+            >
+              <OwnerLayout
+                name={displayName}
+                user={currentUser}
+                onLogout={handleLogout}
+              />
+            </ProtectedRoute>
+          }
         />
-      </Route>
 
-      {/* Shared login page for owners and workers. */}
-      <Route
-        path="/login"
-        element={
-          currentUser &&
-          sessionStorage.getItem("freshmartToken") ? (
-            <Navigate to={getDashboardPath()} replace />
-          ) : (
-            <OwnerLogin onLogin={handleLogin} />
-          )
-        }
-      />
+        {/* WORKER */}
+        <Route
+          path="/worker/*"
+          element={
+            <ProtectedRoute
+              currentUser={currentUser}
+              requiredRole="worker"
+            >
+              <WorkerLayout
+                name={displayName}
+                user={currentUser}
+                onLogout={handleLogout}
+              />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Password recovery pages. */}
-      <Route
-        path="/forgot-password"
-        element={<ForgotPassword />}
-      />
-
-      <Route
-        path="/reset-password"
-        element={<ResetPassword />}
-      />
-
-      {/* Owner dashboard. */}
-      <Route
-        path="/owner/dashboard"
-        element={
-          <ProtectedRoute
-            currentUser={currentUser}
-            requiredRole="owner"
-          >
-            <OwnerLayout
-              name={displayName}
-              user={currentUser}
-              onLogout={handleLogout}
-            />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Worker pages. */}
-      <Route
-        path="/worker/*"
-        element={
-          <ProtectedRoute
-            currentUser={currentUser}
-            requiredRole="worker"
-          >
-            <WorkerLayout
-              name={displayName}
-              user={currentUser}
-              onLogout={handleLogout}
-            />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Unknown URLs. */}
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+        {/* UNKNOWN URL */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </NotificationProvider>
   );
 }
 

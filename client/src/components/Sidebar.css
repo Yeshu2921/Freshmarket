@@ -413,3 +413,33 @@
     padding-left: 9px;
   }
 }
+
+.fm-sidebar-message-count {
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  background: #0d9488;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.fm-sidebar-collapsed .fm-sidebar-message-count {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-size: 9px;
+}
+
+.fm-sidebar-collapsed .fm-sidebar-link {
+  position: relative;
+}

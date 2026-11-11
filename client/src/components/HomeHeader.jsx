@@ -143,11 +143,11 @@ export default function HomeHeader() {
                 Your Orders
               </Nav.Link>
 
-              <Nav.Link as={Link} to="/#about">
+              <Nav.Link as={Link} to="/about">
                 About Us
               </Nav.Link>
 
-              <Nav.Link as={Link} to="/#contact">
+              <Nav.Link as={Link} to="/contact">
                 Contact
               </Nav.Link>
 

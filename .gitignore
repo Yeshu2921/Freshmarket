@@ -6,18 +6,14 @@
 # Dependencies
 node_modules/
 
-# Build files
-dist/
-build/
+# Private message uploads
+backend/private_uploads/
 
-# Logs
-*.log
+# Profile uploads
+backend/uploads/profiles/
 
+# Homepage uploaded images
+backend/public/images/homepage/
 
-
-
-# Editor and OS files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+# Build output
+client/dist/

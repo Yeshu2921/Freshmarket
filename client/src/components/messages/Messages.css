@@ -1,0 +1,716 @@
+
+/* =========================================
+   FRESHMART MESSAGES PAGE
+========================================= */
+
+.fm-messages-page {
+  width: 100%;
+  min-height: calc(100vh - 120px);
+  padding: 24px;
+  background: #f5f7fb;
+  color: #253047;
+  box-sizing: border-box;
+}
+
+/* =========================================
+   PAGE HEADING
+========================================= */
+
+.fm-messages-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.fm-messages-heading h3 {
+  color: #142d4e;
+  font-size: 25px;
+  font-weight: 700;
+  margin: 0 0 5px;
+}
+
+.fm-messages-heading p {
+  color: #7b8798;
+  font-size: 14px;
+  margin: 0;
+}
+
+/* =========================================
+   MAIN MESSAGES LAYOUT
+========================================= */
+
+.fm-messages-layout {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 18px;
+  width: 100%;
+  height: min(720px, calc(100vh - 230px));
+  min-height: 480px;
+}
+
+/* =========================================
+   CHAT SECTION - LEFT
+========================================= */
+
+.fm-chat-section {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e7ebf1;
+  border-radius: 14px;
+  box-shadow: 0 3px 14px rgba(22, 42, 70, 0.045);
+}
+
+/* Empty Chat */
+
+.fm-chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 25px;
+  color: #8491a4;
+}
+
+.fm-chat-empty > i {
+  font-size: 55px;
+  color: #0d9488;
+  margin-bottom: 15px;
+}
+
+.fm-chat-empty h5 {
+  color: #253047;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.fm-chat-empty p {
+  font-size: 14px;
+  margin: 0;
+}
+
+/* =========================================
+   CHAT HEADER
+========================================= */
+
+.fm-chat-header {
+  min-height: 76px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border-bottom: 1px solid #edf0f4;
+  background: #ffffff;
+}
+
+.fm-chat-header strong {
+  display: block;
+  font-size: 15px;
+  color: #172f50;
+  font-weight: 700;
+}
+
+.fm-chat-header small {
+  display: block;
+  margin-top: 4px;
+  color: #0d9488;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+/* =========================================
+   AVATAR
+========================================= */
+
+.fm-contact-avatar {
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  background: #e0f2f1;
+  color: #087e75;
+  font-size: 15px;
+  font-weight: 700;
+  border: 2px solid #e5eeee;
+  text-transform: uppercase;
+}
+
+.fm-contact-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* =========================================
+   CHAT MESSAGES AREA
+========================================= */
+
+.fm-chat-messages {
+  flex: 1;
+  min-height: 0;
+  padding: 22px;
+  overflow-y: auto;
+  background-color: #f8fafc;
+  background-image: radial-gradient(#e5ebf2 0.6px, transparent 0.6px);
+  background-size: 18px 18px;
+  scroll-behavior: smooth;
+}
+
+.fm-chat-messages::-webkit-scrollbar,
+.fm-contacts-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.fm-chat-messages::-webkit-scrollbar-thumb,
+.fm-contacts-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+
+.fm-no-messages {
+  width: fit-content;
+  max-width: 90%;
+  margin: 30px auto;
+  padding: 10px 16px;
+  color: #7b8798;
+  background: #ffffff;
+  border: 1px solid #e8edf3;
+  border-radius: 20px;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* =========================================
+   MESSAGE ROWS
+========================================= */
+
+.fm-message-row {
+  width: 100%;
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.fm-message-mine {
+  justify-content: flex-end;
+}
+
+.fm-message-theirs {
+  justify-content: flex-start;
+}
+
+.fm-message-bubble {
+  position: relative;
+  max-width: min(75%, 480px);
+  min-width: 100px;
+  padding: 11px 13px 8px;
+  border-radius: 13px;
+  box-shadow: 0 2px 5px rgba(15, 35, 60, 0.055);
+  overflow-wrap: anywhere;
+}
+
+.fm-message-mine .fm-message-bubble {
+  background: #e0f2f1;
+  color: #183d3a;
+  border: 1px solid #cce8e5;
+  border-bottom-right-radius: 3px;
+}
+
+.fm-message-theirs .fm-message-bubble {
+  background: #ffffff;
+  color: #263449;
+  border: 1px solid #e7ebf1;
+  border-bottom-left-radius: 3px;
+}
+
+.fm-message-bubble p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.fm-message-bubble > i {
+  color: #8491a4;
+  font-size: 13px;
+}
+
+/* =========================================
+   MESSAGE TIME AND EDITED LABEL
+========================================= */
+
+.fm-message-meta {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.fm-message-meta small {
+  font-size: 10px;
+  color: #8491a4;
+}
+
+/* =========================================
+   MESSAGE ACTIONS
+========================================= */
+
+.fm-message-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.fm-message-actions button {
+  border: none;
+  background: transparent;
+  color: #718096;
+  padding: 3px 6px;
+  font-size: 12px;
+  border-radius: 5px;
+  transition: all 0.2s ease;
+}
+
+.fm-message-actions button:hover {
+  background: rgba(13, 148, 136, 0.12);
+  color: #087e75;
+}
+
+/* =========================================
+   IMAGE, AUDIO AND VIDEO
+========================================= */
+
+.fm-chat-image {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  max-height: 300px;
+  margin-top: 5px;
+  border-radius: 9px;
+  object-fit: contain;
+  background: #e9eef3;
+}
+
+.fm-chat-audio {
+  display: block;
+  width: min(280px, 100%);
+  margin-top: 8px;
+}
+
+.fm-chat-video {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  max-height: 260px;
+  margin-top: 8px;
+  border-radius: 9px;
+  background: #111827;
+}
+
+/* =========================================
+   MESSAGE COMPOSER
+========================================= */
+
+.fm-message-composer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  background: #ffffff;
+  border-top: 1px solid #edf0f4;
+}
+
+.fm-attachment-buttons {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.fm-attachment-buttons button,
+.fm-selected-file button {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 9px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 17px;
+  transition: 0.2s ease;
+}
+
+.fm-attachment-buttons button:hover {
+  background: #e0f2f1;
+  color: #087e75;
+}
+
+.fm-composer-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.fm-composer-input input {
+  width: 100%;
+  height: 43px;
+  padding: 0 15px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  outline: none;
+  color: #263449;
+  background: #f8fafc;
+  font-size: 14px;
+  transition: 0.2s ease;
+}
+
+.fm-composer-input input:focus {
+  border-color: #0d9488;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.09);
+}
+
+.fm-composer-input input::placeholder {
+  color: #9aa6b5;
+}
+
+.fm-send-button {
+  width: 43px;
+  height: 43px;
+  min-width: 43px;
+  border: none;
+  border-radius: 10px;
+  background: #0d9488;
+  color: #ffffff;
+  font-size: 16px;
+  transition: 0.2s ease;
+}
+
+.fm-send-button:hover:not(:disabled) {
+  background: #087e75;
+  transform: translateY(-1px);
+}
+
+.fm-send-button:disabled {
+  background: #a7c9c5;
+  cursor: not-allowed;
+}
+
+/* Selected File */
+
+.fm-selected-file {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 7px;
+  background: #e0f2f1;
+  border-radius: 7px;
+  color: #087e75;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.fm-selected-file button {
+  width: 25px;
+  height: 25px;
+  min-width: 25px;
+  background: transparent;
+  font-size: 14px;
+}
+
+/* =========================================
+   CONTACT LIST - RIGHT
+========================================= */
+
+.fm-contacts-section {
+  width: 310px;
+  min-width: 270px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e7ebf1;
+  border-radius: 14px;
+  box-shadow: 0 3px 14px rgba(22, 42, 70, 0.045);
+}
+
+.fm-contacts-heading {
+  min-height: 76px;
+  padding: 15px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.fm-contacts-heading h5 {
+  margin: 0;
+  color: #172f50;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.fm-contacts-heading span {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #e0f2f1;
+  color: #087e75;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fm-contacts-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.fm-contact-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  transition: 0.2s ease;
+}
+
+.fm-contact-item:hover {
+  background: #f1f7f7;
+}
+
+.fm-contact-item.active {
+  background: #e0f2f1;
+}
+
+.fm-contact-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.fm-contact-details strong {
+  display: block;
+  color: #263449;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fm-contact-details small {
+  display: block;
+  margin-top: 3px;
+  color: #0d9488;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.fm-contact-details span {
+  display: block;
+  margin-top: 4px;
+  color: #8491a4;
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fm-contact-unread {
+  width: 21px;
+  height: 21px;
+  min-width: 21px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #0d9488;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.fm-no-contacts {
+  padding: 25px 12px;
+  color: #8491a4;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* =========================================
+   LOADING
+========================================= */
+
+.fm-messages-loading {
+  padding: 50px 20px;
+  color: #64748b;
+  text-align: center;
+  font-size: 14px;
+}
+
+/* =========================================
+   TABLET RESPONSIVE
+========================================= */
+
+@media (max-width: 991.98px) {
+  .fm-messages-page {
+    padding: 18px;
+  }
+
+  .fm-messages-layout {
+    gap: 12px;
+    height: min(700px, calc(100vh - 220px));
+  }
+
+  .fm-contacts-section {
+    width: 260px;
+    min-width: 230px;
+  }
+
+  .fm-chat-messages {
+    padding: 16px;
+  }
+
+  .fm-message-bubble {
+    max-width: 85%;
+  }
+}
+
+/* =========================================
+   MOBILE RESPONSIVE
+========================================= */
+
+@media (max-width: 767.98px) {
+  .fm-messages-page {
+    padding: 12px;
+    min-height: auto;
+  }
+
+  .fm-messages-heading {
+    margin-bottom: 15px;
+  }
+
+  .fm-messages-heading h3 {
+    font-size: 21px;
+  }
+
+  .fm-messages-layout {
+    height: auto;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .fm-chat-section {
+    width: 100%;
+    min-height: 550px;
+    height: 65vh;
+    max-height: 680px;
+  }
+
+  .fm-contacts-section {
+    width: 100%;
+    min-width: 0;
+    max-height: 320px;
+    min-height: 220px;
+  }
+
+  .fm-contacts-heading {
+    min-height: 58px;
+  }
+
+  .fm-chat-header {
+    min-height: 65px;
+    padding: 10px 13px;
+  }
+
+  .fm-chat-messages {
+    padding: 13px 10px;
+  }
+
+  .fm-message-bubble {
+    max-width: 88%;
+  }
+
+  .fm-message-composer {
+    gap: 7px;
+    padding: 10px;
+  }
+
+  .fm-attachment-buttons {
+    gap: 2px;
+  }
+
+  .fm-attachment-buttons button {
+    width: 30px;
+    height: 34px;
+    font-size: 15px;
+  }
+
+  .fm-composer-input input {
+    height: 40px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .fm-send-button {
+    width: 39px;
+    min-width: 39px;
+    height: 40px;
+  }
+}
+
+/* =========================================
+   SMALL MOBILE
+========================================= */
+
+@media (max-width: 420px) {
+  .fm-messages-page {
+    padding: 8px;
+  }
+
+  .fm-chat-section {
+    min-height: 500px;
+    height: 70vh;
+  }
+
+  .fm-message-composer {
+    flex-wrap: wrap;
+  }
+
+  .fm-attachment-buttons {
+    order: 1;
+  }
+
+  .fm-composer-input {
+    order: 2;
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .fm-send-button {
+    order: 3;
+  }
+
+  .fm-message-bubble {
+    max-width: 92%;
+  }
+}

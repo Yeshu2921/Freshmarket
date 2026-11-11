@@ -7,6 +7,7 @@ const {
   getOwnerOrderDetails,
   getOwnerOrderReceipt,
   permanentlyDeleteOwnerOrder,
+  resetCustomerPin,
 } = require("../controllers/ownerOrderController");
 
 const {
@@ -20,7 +21,8 @@ router.use(requireOwner);
 
 // Get all orders.
 router.get("/", getAllOwnerOrders);
-
+// Reset the customer PIN associated with an order.
+router.patch("/:orderId/reset-pin", resetCustomerPin);
 // Get private payment receipt.
 // Keep this route before the general order details route.
 router.get("/:orderId/receipt", getOwnerOrderReceipt);

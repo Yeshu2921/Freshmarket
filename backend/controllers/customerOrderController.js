@@ -1,4 +1,5 @@
-
+const {createNotification,
+} = require("./notificationController");
 const db = require("../db");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
@@ -468,9 +469,54 @@ async function createCustomerOrder(req, res) {
       ]
     );
 
-    // Commit the complete order.
-    await connection.commit();
-    transactionStarted = false;
+    // Commit the complete order first.
+await connection.commit();
+transactionStarted = false;
+
+// =============================================
+// NOTIFY ACTIVE OWNER AND WORKERS
+// =============================================
+
+try {
+  // Find all active Owner and Worker accounts.
+  const [recipients] = await db.execute(
+    `SELECT id
+     FROM users
+     WHERE is_active = 1
+       AND role IN ('owner', 'worker')`
+  );
+
+  // Save a notification for each recipient.
+  // Socket.IO delivers it immediately when they are online.
+  const notificationResults = await Promise.allSettled(
+    recipients.map((recipient) =>
+      createNotification({
+        userId: recipient.id,
+        type: "new_order",
+        title: "New Customer Order",
+        message: `Order ${orderNumber} has been submitted.`,
+        referenceId: orderId,
+      })
+    )
+  );
+
+  notificationResults.forEach((result) => {
+    if (result.status === "rejected") {
+      console.error(
+        "Could not create an order notification:",
+        result.reason?.message
+      );
+    }
+  });
+} catch (notificationError) {
+  // The order is already committed.
+  // A notification failure must not make the customer think
+  // the order itself failed.
+  console.error(
+    "Order notification error:",
+    notificationError.message
+  );
+}
 
     return res.status(201).json({
       success: true,

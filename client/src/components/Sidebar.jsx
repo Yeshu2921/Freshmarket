@@ -1,5 +1,6 @@
 
 import "./Sidebar.css";
+import { useNotifications } from "../context/NotificationContext";
 
 const menus = {
   owner: [
@@ -8,7 +9,6 @@ const menus = {
     { label: "Products", icon: "bi-box-seam" },
     { label: "Categories", icon: "bi-grid" },
     { label: "Brands", icon: "bi-tags" },
-    
     { label: "Online Orders", icon: "bi-bag-check" },
     { label: "Inventory", icon: "bi-clipboard-data" },
     { label: "Reports", icon: "bi-bar-chart" },
@@ -33,6 +33,8 @@ function Sidebar({
   onClose,
   collapsed = false,
 }) {
+  const { unreadMessagesCount } = useNotifications();
+
   const normalizedRole = String(role).trim().toLowerCase();
   const roleMenus = menus[normalizedRole] || [];
 
@@ -89,6 +91,7 @@ function Sidebar({
         >
           {roleMenus.map((item) => {
             const isActive = activePage === item.label;
+            const isMessages = item.label === "Messages";
 
             return (
               <button
@@ -106,6 +109,17 @@ function Sidebar({
                 <span className="fm-sidebar-link-text">
                   {item.label}
                 </span>
+
+                {isMessages && unreadMessagesCount > 0 && (
+                  <span
+                    className="fm-sidebar-message-count"
+                    aria-label={`${unreadMessagesCount} unread messages`}
+                  >
+                    {unreadMessagesCount > 99
+                      ? "99+"
+                      : unreadMessagesCount}
+                  </span>
+                )}
 
                 {isActive && (
                   <span

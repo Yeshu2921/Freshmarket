@@ -1,11 +1,14 @@
 
 require("dotenv").config();
 
+const http = require("http");
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 const db = require("./db");
+
+const { initializeSocket } = require("./socket/socketServer");
 
 // ======================================================
 // IMPORT ROUTES
@@ -53,6 +56,14 @@ const workerDashboardRoutes = require(
 // Homepage management
 const homepageRoutes = require(
   "./routes/homepageRoutes"
+);
+
+// Messaging and notifications
+const messageRoutes = require(
+  "./routes/messageRoutes"
+);
+const notificationRoutes = require(
+  "./routes/notificationRoutes"
 );
 
 // ======================================================
@@ -133,6 +144,36 @@ fs.mkdirSync(homepageImagesDirectory, {
   recursive: true,
 });
 
+// Private message attachment directories.
+// The messageUpload middleware also creates these automatically.
+const messageImagesDirectory = path.join(
+  privateUploadsDirectory,
+  "messages",
+  "images"
+);
+
+const messageAudioDirectory = path.join(
+  privateUploadsDirectory,
+  "messages",
+  "audio"
+);
+
+const messageVideosDirectory = path.join(
+  privateUploadsDirectory,
+  "messages",
+  "videos"
+);
+
+[
+  messageImagesDirectory,
+  messageAudioDirectory,
+  messageVideosDirectory,
+].forEach((directory) => {
+  fs.mkdirSync(directory, {
+    recursive: true,
+  });
+});
+
 // ======================================================
 // PUBLIC STATIC FILES
 // ======================================================
@@ -151,8 +192,9 @@ app.use(
 );
 
 // IMPORTANT:
-// Do not add express.static() for privateUploadsDirectory.
-// Payment receipts must be accessed through authenticated routes.
+// Do not expose privateUploadsDirectory using express.static().
+// Payment receipts and message attachments must be accessed
+// through authenticated and authorized routes.
 
 // ======================================================
 // DATABASE HEALTH CHECK
@@ -293,6 +335,24 @@ app.use(
 );
 
 // ======================================================
+// MESSAGING
+// ======================================================
+
+app.use(
+  "/api/messages",
+  messageRoutes
+);
+
+// ======================================================
+// NOTIFICATIONS
+// ======================================================
+
+app.use(
+  "/api/notifications",
+  notificationRoutes
+);
+
+// ======================================================
 // 404 HANDLER
 // ======================================================
 
@@ -324,6 +384,15 @@ app.use((error, req, res, next) => {
 });
 
 // ======================================================
+// CREATE HTTP SERVER FOR EXPRESS + SOCKET.IO
+// ======================================================
+
+const httpServer = http.createServer(app);
+
+// Initialize Socket.IO on the same HTTP server.
+initializeSocket(httpServer);
+
+// ======================================================
 // START SERVER
 // ======================================================
 
@@ -334,7 +403,7 @@ async function startServer() {
     // Verify MySQL connection before starting server.
     await db.query("SELECT 1");
 
-    app.listen(PORT, () => {
+    httpServer.listen(PORT, () => {
       console.log("--------------------------------------");
       console.log("       FRESHMART BACKEND STARTED");
       console.log("--------------------------------------");
@@ -379,9 +448,19 @@ async function startServer() {
         `Homepage: http://localhost:${PORT}/api/homepage`
       );
 
+      console.log(
+        `Messages: http://localhost:${PORT}/api/messages`
+      );
+
+      console.log(
+        `Notifications: http://localhost:${PORT}/api/notifications`
+      );
+
       console.log("--------------------------------------");
       console.log("MySQL connection successful.");
+      console.log("Socket.IO server initialized.");
       console.log("Private payment receipts protected.");
+      console.log("Private message attachments protected.");
       console.log("--------------------------------------");
     });
   } catch (error) {

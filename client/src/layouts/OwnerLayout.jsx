@@ -15,12 +15,15 @@ import OwnerOnlineOrders from "../owner/pages/OwnerOnlineOrders";
 import OwnerReports from "../owner/pages/OwnerReports";
 import OwnerSettings from "../owner/pages/OwnerSettings";
 
+import Messages from "../components/messages/Messages";
+
 import "./OwnerLayout.css";
 
-function OwnerLayout({ name = "Owner", onLogout }) {
+function OwnerLayout({ name = "Owner", user, onLogout }) {
   const [activePage, setActivePage] = useState("Dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedConversationId, setSelectedConversationId] = useState(null);
 
   function toggleSidebar() {
     if (window.matchMedia("(min-width: 992px)").matches) {
@@ -36,6 +39,28 @@ function OwnerLayout({ name = "Owner", onLogout }) {
 
   function handleNavigate(page) {
     setActivePage(page);
+    setSidebarOpen(false);
+
+    // Manual Messages navigation opens the contact list.
+    if (page === "Messages") {
+      setSelectedConversationId(null);
+    }
+  }
+
+  // Handle notification clicks.
+  function handleNotificationNavigate(notification) {
+    const type = notification.notification_type;
+
+    if (type === "new_order" || type === "order_update") {
+      setActivePage("Online Orders");
+      setSelectedConversationId(null);
+    }
+
+    if (type === "new_message") {
+      setSelectedConversationId(notification.reference_id || null);
+      setActivePage("Messages");
+    }
+
     setSidebarOpen(false);
   }
 
@@ -68,6 +93,14 @@ function OwnerLayout({ name = "Owner", onLogout }) {
       case "Settings":
         return <OwnerSettings />;
 
+      case "Messages":
+        return (
+          <Messages
+            currentUser={user}
+            initialConversationId={selectedConversationId}
+          />
+        );
+
       default:
         return (
           <div className="owner-page-placeholder">
@@ -94,8 +127,10 @@ function OwnerLayout({ name = "Owner", onLogout }) {
       <Header
         role="owner"
         name={name}
+        user={user}
         onToggleSidebar={toggleSidebar}
         onLogout={onLogout}
+        onNotificationNavigate={handleNotificationNavigate}
       />
 
       <Sidebar

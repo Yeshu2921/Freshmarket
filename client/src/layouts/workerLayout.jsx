@@ -11,6 +11,8 @@ import WorkerProducts from "../worker/pages/WorkerProducts";
 import WorkerOnlineOrders from "../worker/pages/WorkerOnlineOrders";
 import WorkerSalesHistory from "../worker/pages/WorkerSalesHistory";
 
+import Messages from "../components/messages/Messages";
+
 import "./WorkerLayout.css";
 
 function WorkerLayout({ name = "Worker", onLogout, user }) {
@@ -48,6 +50,24 @@ function WorkerLayout({ name = "Worker", onLogout, user }) {
     }
   }
 
+  // Handle notification clicks.
+  function handleNotificationNavigate(notification) {
+    const type = notification.notification_type;
+
+    if (type === "new_order" || type === "order_update") {
+      navigate("/worker/orders");
+      return;
+    }
+
+    if (type === "new_message") {
+      navigate("/worker/messages", {
+        state: {
+          conversationId: notification.reference_id || null,
+        },
+      });
+    }
+  }
+
   function renderPage() {
     switch (location.pathname) {
       case "/worker/dashboard":
@@ -63,7 +83,14 @@ function WorkerLayout({ name = "Worker", onLogout, user }) {
         return <WorkerSalesHistory />;
 
       case "/worker/messages":
-        return <h2>Messages</h2>;
+        return (
+          <Messages
+            currentUser={user}
+            initialConversationId={
+              location.state?.conversationId || null
+            }
+          />
+        );
 
       case "/worker":
       case "/worker/":
@@ -102,6 +129,7 @@ function WorkerLayout({ name = "Worker", onLogout, user }) {
             }
           }}
           onLogout={onLogout}
+          onNotificationNavigate={handleNotificationNavigate}
         />
 
         <main className="worker-layout-content">

@@ -1,7 +1,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Dropdown, Form, InputGroup } from "react-bootstrap";
+
 import MyProfile from "../components/MyProfile";
+import { useNotifications } from "../context/NotificationContext";
+
 import "./Header.css";
 
 const API_ORIGIN = "http://localhost:5134";
@@ -30,26 +33,31 @@ function Header({
   name = "Owner",
   onToggleSidebar,
   onLogout,
-  notifications = [],
-  unreadCount,
   user: userProp,
   onUserUpdated,
+  onNotificationNavigate,
 }) {
   const [searchValue, setSearchValue] = useState("");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [storedUser, setStoredUser] = useState(getStoredUser);
   const [photoFailed, setPhotoFailed] = useState(false);
-
-  // Website logo
   const [logo, setLogo] = useState(null);
 
-  // Load stored user
+  // Shared notification context.
+  const {
+    notifications,
+    unreadNotificationCount,
+    markNotificationRead,
+    markAllNotificationsRead,
+  } = useNotifications();
+
+  // Load stored user.
   useEffect(() => {
     setStoredUser(getStoredUser());
   }, []);
 
-  // Load the logo managed from Owner Settings
+  // Load website logo.
   useEffect(() => {
     const controller = new AbortController();
 
@@ -64,7 +72,6 @@ function Header({
         }
 
         const data = await response.json();
-
         setLogo(data.logo || null);
       } catch (error) {
         if (error.name !== "AbortError") {
@@ -115,12 +122,9 @@ function Header({
     setPhotoFailed(false);
   }, [photoUrl]);
 
-  const unread = Number.isFinite(Number(unreadCount))
-    ? Math.max(0, Number(unreadCount))
-    : notifications.filter(
-        (item) => !item.read && !item.is_read
-      ).length;
+  const unread = Number(unreadNotificationCount) || 0;
 
+  // Update profile information.
   function handleUserUpdated(updatedUser) {
     const nextUser = { ...user, ...updatedUser };
 
@@ -133,6 +137,24 @@ function Header({
     }
   }
 
+  // Open the correct page when a notification is clicked.
+  async function handleNotificationClick(notification) {
+    try {
+      if (!notification.is_read) {
+        await markNotificationRead(notification.id);
+      }
+
+      setNotificationsOpen(false);
+
+      if (onNotificationNavigate) {
+        onNotificationNavigate(notification);
+      }
+    } catch (error) {
+      console.error("Notification navigation error:", error);
+    }
+  }
+
+  // Profile avatar.
   function Avatar({ large = false }) {
     return (
       <span
@@ -156,7 +178,10 @@ function Header({
     <>
       <header className="fm-header">
         <div className="container-fluid fm-header-inner">
+
+          {/* LEFT SECTION */}
           <div className="fm-header-left">
+
             <button
               type="button"
               className="fm-menu-button d-lg-none"
@@ -205,6 +230,7 @@ function Header({
             </div>
           </div>
 
+          {/* SEARCH */}
           <div className="fm-search-wrapper d-none d-md-block">
             <Form
               className="fm-header-search"
@@ -239,13 +265,14 @@ function Header({
             </Form>
           </div>
 
+          {/* RIGHT SECTION */}
           <div className="fm-header-right">
+
+            {/* NOTIFICATIONS */}
             <Dropdown
               align="end"
               show={notificationsOpen}
-              onToggle={(nextOpen) =>
-                setNotificationsOpen(nextOpen)
-              }
+              onToggle={(nextOpen) => setNotificationsOpen(nextOpen)}
             >
               <Dropdown.Toggle
                 variant="link"
@@ -264,10 +291,24 @@ function Header({
               </Dropdown.Toggle>
 
               <Dropdown.Menu className="fm-notification-menu">
+
                 <div className="fm-notification-heading">
                   <strong>Notifications</strong>
+
                   <span>{unread} unread</span>
                 </div>
+
+                {unread > 0 && (
+                  <div className="px-3 pb-2 text-end">
+                    <button
+                      type="button"
+                      className="btn btn-link btn-sm p-0"
+                      onClick={markAllNotificationsRead}
+                    >
+                      Mark all as read
+                    </button>
+                  </div>
+                )}
 
                 <Dropdown.Divider />
 
@@ -277,31 +318,42 @@ function Header({
                       className="bi bi-bell-slash"
                       aria-hidden="true"
                     />
-                    <p>No new notifications</p>
+
+                    <p>No notifications yet</p>
                   </div>
                 ) : (
                   <div className="fm-notification-list">
-                    {notifications.slice(0, 8).map((item, index) => (
-                      <div
-                        key={item.id ?? index}
+                    {notifications.slice(0, 8).map((item) => (
+                      <button
+                        type="button"
+                        key={item.id}
                         className={`fm-notification-item ${
-                          !item.read && !item.is_read
-                            ? "unread"
-                            : ""
+                          !item.is_read ? "unread" : ""
                         }`}
+                        onClick={() =>
+                          handleNotificationClick(item)
+                        }
                       >
                         <span className="fm-notification-item-icon">
-                          <i className="bi bi-bell" />
+                          <i
+                            className={
+                              item.notification_type === "new_order"
+                                ? "bi bi-bag-check"
+                                : item.notification_type === "new_message"
+                                ? "bi bi-chat-dots"
+                                : "bi bi-bell"
+                            }
+                          />
                         </span>
 
-                        <div>
+                        <span className="fm-notification-item-content">
                           <strong>
                             {item.title || "Notification"}
                           </strong>
 
-                          <p>
-                            {item.message || item.description || ""}
-                          </p>
+                          <span>
+                            {item.message || ""}
+                          </span>
 
                           {item.created_at && (
                             <small>
@@ -310,14 +362,19 @@ function Header({
                               ).toLocaleString()}
                             </small>
                           )}
-                        </div>
-                      </div>
+                        </span>
+
+                        {!item.is_read && (
+                          <span className="fm-notification-dot" />
+                        )}
+                      </button>
                     ))}
                   </div>
                 )}
               </Dropdown.Menu>
             </Dropdown>
 
+            {/* PROFILE */}
             <Dropdown align="end">
               <Dropdown.Toggle
                 variant="link"

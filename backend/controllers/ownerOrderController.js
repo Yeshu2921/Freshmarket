@@ -1,6 +1,7 @@
 const db = require("../db");
 const fs = require("fs");
 const path = require("path");
+const bcrypt = require("bcryptjs");
 
 // ======================================================
 // PRIVATE PAYMENT RECEIPT HELPERS
@@ -679,6 +680,132 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
     }
   }
 };
+  
+// ======================================================
+// PATCH /api/owner-orders/:orderId/reset-pin
+//
+// Owner resets the PIN of the customer profile
+// associated with the selected order.
+// ======================================================
+
+const resetCustomerPin = async (req, res) => {
+  const orderId = Number(req.params.orderId);
+
+  const { newPin, confirmPin } = req.body;
+
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid order ID.",
+    });
+  }
+
+  // Validate new PIN.
+  if (
+    typeof newPin !== "string" ||
+    !/^\d{4,6}$/.test(newPin)
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "PIN must contain 4 to 6 digits.",
+    });
+  }
+
+  // Validate confirmation.
+  if (
+    typeof confirmPin !== "string" ||
+    newPin !== confirmPin
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "New PIN and confirmation PIN do not match.",
+    });
+  }
+
+  let connection;
+
+  try {
+    connection = await db.getConnection();
+
+    await connection.beginTransaction();
+
+    // Find the customer profile associated with this order.
+    const [orders] = await connection.query(
+      `SELECT customer_id
+       FROM customer_orders
+       WHERE id = ?
+       FOR UPDATE`,
+      [orderId]
+    );
+
+    if (orders.length === 0) {
+      await connection.rollback();
+
+      return res.status(404).json({
+        success: false,
+        message: "Order not found.",
+      });
+    }
+
+    const customerId = orders[0].customer_id;
+
+    if (!customerId) {
+      await connection.rollback();
+
+      return res.status(404).json({
+        success: false,
+        message: "Customer profile not found.",
+      });
+    }
+
+    // Hash the PIN before saving it.
+    const hashedPin = await bcrypt.hash(newPin, 12);
+
+    const [updateResult] = await connection.query(
+      `UPDATE customer_profiles
+       SET pin_hash = ?
+       WHERE id = ?`,
+      [hashedPin, customerId]
+    );
+
+    if (updateResult.affectedRows !== 1) {
+      await connection.rollback();
+
+      return res.status(404).json({
+        success: false,
+        message: "Unable to update customer PIN.",
+      });
+    }
+
+    await connection.commit();
+
+    return res.status(200).json({
+      success: true,
+      message: "Customer PIN has been reset successfully.",
+    });
+
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error("PIN reset rollback error:", rollbackError);
+      }
+    }
+
+    console.error("Reset customer PIN error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to reset customer PIN.",
+    });
+
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
 
 // ======================================================
 // EXPORT CONTROLLER FUNCTIONS
@@ -689,4 +816,5 @@ module.exports = {
   getOwnerOrderDetails,
   getOwnerOrderReceipt,
   permanentlyDeleteOwnerOrder,
+  resetCustomerPin,
 };

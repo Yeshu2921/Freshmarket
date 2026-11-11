@@ -281,6 +281,15 @@ export default function OwnerOnlineOrders() {
   const [showDetails, setShowDetails] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
+  const [showResetPin, setShowResetPin] = useState(false);
+  const [resetPinOrder, setResetPinOrder] = useState(null);
+
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+
+  const [resetPinLoading, setResetPinLoading] = useState(false);
+  const [resetPinError, setResetPinError] = useState("");
+
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -596,6 +605,81 @@ export default function OwnerOnlineOrders() {
       setDeleteLoading(false);
     }
   };
+    
+const openResetPinModal = (order) => {
+  setResetPinOrder(order);
+  setNewPin("");
+  setConfirmPin("");
+  setResetPinError("");
+  setShowResetPin(true);
+};
+
+const closeResetPinModal = () => {
+  if (resetPinLoading) return;
+
+  setShowResetPin(false);
+  setResetPinOrder(null);
+  setNewPin("");
+  setConfirmPin("");
+  setResetPinError("");
+};
+
+const handleResetCustomerPin = async () => {
+  if (!resetPinOrder) return;
+
+  if (!/^\d{4,6}$/.test(newPin)) {
+    setResetPinError("PIN must contain 4 to 6 digits.");
+    return;
+  }
+
+  if (newPin !== confirmPin) {
+    setResetPinError("PIN confirmation does not match.");
+    return;
+  }
+
+  try {
+    setResetPinLoading(true);
+    setResetPinError("");
+
+    const orderId = getOrderId(resetPinOrder);
+
+    const response = await fetch(
+      `${API}/owner-orders/${orderId}/reset-pin`,
+      {
+        method: "PATCH",
+        headers: {
+          ...authHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          newPin,
+          confirmPin,
+        }),
+      }
+    );
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        data.message || "Failed to reset customer PIN."
+      );
+    }
+
+    setSuccess(data.message || "Customer PIN reset successfully.");
+
+    setShowResetPin(false);
+    setResetPinOrder(null);
+    setNewPin("");
+    setConfirmPin("");
+
+  } catch (err) {
+    console.error("Reset customer PIN error:", err);
+    setResetPinError(err.message || "Unable to reset customer PIN.");
+  } finally {
+    setResetPinLoading(false);
+  }
+};
 
   const renderPaymentStatus = (order) => {
     const status = getPaymentStatus(order);
@@ -886,6 +970,14 @@ export default function OwnerOnlineOrders() {
                             >
                               <i className="bi bi-eye" />
                             </Button>
+                           <Button
+                          size="sm"
+                       variant="outline-warning"
+                      title="Reset customer PIN"
+                    onClick={() => openResetPinModal(order)}
+                                                      >
+                        <i className="bi bi-key-fill" />
+                             </Button>
 
                             {canOwnerDeleteOrder(order) && (
                               <Button
@@ -1274,6 +1366,104 @@ export default function OwnerOnlineOrders() {
           </Button>
         </Modal.Footer>
       </Modal>
+      
+       {/* Reset Customer PIN Modal */}
+          <Modal
+     show={showResetPin}
+   onHide={closeResetPinModal}
+   centered
+   backdrop={resetPinLoading ? "static" : true}
+   keyboard={!resetPinLoading}
+>
+  <Modal.Header closeButton={!resetPinLoading}>
+    <Modal.Title>
+      <i className="bi bi-shield-lock me-2" />
+      Reset Customer PIN
+    </Modal.Title>
+  </Modal.Header>
+
+  <Modal.Body>
+    {resetPinError && (
+      <Alert
+        variant="danger"
+        dismissible
+        onClose={() => setResetPinError("")}
+      >
+        {resetPinError}
+      </Alert>
+    )}
+
+    <Form.Group className="mb-3">
+      <Form.Label>New PIN</Form.Label>
+
+      <Form.Control
+        type="password"
+        inputMode="numeric"
+        autoComplete="new-password"
+        maxLength={6}
+        placeholder="Enter new 4–6 digit PIN"
+        value={newPin}
+        onChange={(event) =>
+          setNewPin(event.target.value.replace(/\D/g, "").slice(0, 6))
+        }
+        disabled={resetPinLoading}
+      />
+
+      <Form.Text className="text-muted">
+        Enter a PIN containing 4 to 6 digits.
+      </Form.Text>
+    </Form.Group>
+
+    <Form.Group className="mb-3">
+      <Form.Label>Confirm New PIN</Form.Label>
+
+      <Form.Control
+        type="password"
+        inputMode="numeric"
+        autoComplete="new-password"
+        maxLength={6}
+        placeholder="Confirm new PIN"
+        value={confirmPin}
+        onChange={(event) =>
+          setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))
+        }
+        disabled={resetPinLoading}
+      />
+    </Form.Group>
+  </Modal.Body>
+
+  <Modal.Footer>
+    <Button
+      variant="secondary"
+      onClick={closeResetPinModal}
+      disabled={resetPinLoading}
+    >
+      Cancel
+    </Button>
+
+    <Button
+      variant="warning"
+      onClick={handleResetCustomerPin}
+      disabled={
+        resetPinLoading ||
+        !newPin ||
+        !confirmPin
+      }
+    >
+      {resetPinLoading ? (
+        <>
+          <Spinner size="sm" className="me-2" />
+          Resetting...
+        </>
+      ) : (
+        <>
+          <i className="bi bi-key-fill me-2" />
+          Reset PIN
+        </>
+      )}
+    </Button>
+  </Modal.Footer>
+</Modal>
 
       {/* Delete confirmation modal */}
       <Modal

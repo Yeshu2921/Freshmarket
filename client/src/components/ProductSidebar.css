@@ -9,11 +9,16 @@
 }
 
 .product-sidebar {
+  position: relative;
+  z-index: 1;
+
   width: 100%;
   min-width: 0;
   padding: 14px 12px;
+
   border: 1px solid #e0e9e2;
   border-radius: 10px;
+
   background: #fff;
   color: #26352b;
 }
@@ -22,6 +27,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
+
   padding: 4px 4px 14px;
   border-bottom: 1px solid #edf1ed;
 }
@@ -30,21 +36,26 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+
   flex: 0 0 30px;
   width: 30px;
   height: 30px;
+
   border-radius: 7px;
   background: #eaf5ed;
   color: #146c43;
+
   font-size: 15px;
 }
 
 .product-sidebar-heading h2 {
   min-width: 0;
   margin: 0;
+
   color: #23432e;
   font-size: 15px;
   font-weight: 700;
+
   overflow-wrap: anywhere;
 }
 
@@ -53,9 +64,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+
   margin: 12px 0;
   padding: 10px;
+
   border-radius: 7px;
+
   color: #34483a;
   font-size: 13px;
   font-weight: 600;
@@ -84,6 +98,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
+
   min-width: 0;
   border-radius: 7px;
 }
@@ -95,11 +110,14 @@
 .product-sidebar-main-link {
   flex: 1 1 auto;
   min-width: 0;
+
   padding: 10px 8px;
+
   color: #36483b;
   font-size: 13px;
   line-height: 1.4;
   text-decoration: none;
+
   overflow-wrap: anywhere;
 }
 
@@ -112,15 +130,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+
   flex: 0 0 28px;
   width: 28px;
   height: 28px;
+
   margin-right: 3px;
   padding: 0;
+
   border: 0;
   border-radius: 5px;
+
   background: transparent;
   color: #146c43;
+
   cursor: pointer;
   font-size: 19px;
 }
@@ -132,6 +155,7 @@
 .product-sidebar-subcategories {
   margin: 2px 0 7px 10px;
   padding-left: 8px;
+
   border-left: 2px solid #e0eee3;
 }
 
@@ -139,9 +163,12 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
+
   min-width: 0;
   padding: 8px 7px;
+
   border-radius: 6px;
+
   color: #657368;
   font-size: 12px;
   line-height: 1.4;
@@ -158,7 +185,9 @@
   flex: 0 0 6px;
   width: 6px;
   height: 6px;
+
   margin-top: 5px;
+
   border-radius: 50%;
   background: #a3b9a8;
 }
@@ -170,8 +199,10 @@
 .product-sidebar-message,
 .product-sidebar-error {
   margin: 12px 4px;
+
   font-size: 12px;
   line-height: 1.5;
+
   overflow-wrap: anywhere;
 }
 
@@ -182,6 +213,10 @@
 .product-sidebar-error {
   color: #b02a37;
 }
+
+/* ==========================================
+   SMALL MOBILE
+========================================== */
 
 @media (max-width: 480px) {
   .product-sidebar {
@@ -207,8 +242,4 @@
     padding: 7px 4px;
     font-size: 11px;
   }
-}
-.product-sidebar {
-  position: relative;
-  z-index: 1;
 }
