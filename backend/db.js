@@ -1,6 +1,5 @@
 
 const mysql = require("mysql2/promise");
-const fs = require("fs");
 require("dotenv").config();
 
 const pool = mysql.createPool({
@@ -10,13 +9,12 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD || "",
   database: process.env.DB_NAME || "freshmarket",
 
-  // Enable SSL for TiDB Cloud.
+  // TiDB Cloud Starter requires TLS
   ...(process.env.DB_SSL === "true" && {
-  ssl: {
-    ca: fs.readFileSync(process.env.DB_SSL_CA_PATH, "utf8"),
-    rejectUnauthorized: true,
-  },
-}),
+    ssl: {
+      minVersion: "TLSv1.2",
+    },
+  }),
 
   waitForConnections: true,
   connectionLimit: 10,
