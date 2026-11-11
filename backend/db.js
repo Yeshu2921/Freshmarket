@@ -9,7 +9,7 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD || "",
   database: process.env.DB_NAME || "freshmarket",
 
-  // TiDB Cloud Starter requires TLS
+  // Enable secure TLS connection for TiDB Cloud
   ...(process.env.DB_SSL === "true" && {
     ssl: {
       minVersion: "TLSv1.2",
