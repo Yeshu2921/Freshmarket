@@ -14,7 +14,7 @@ async function queryRows(sql, params = []) {
 }
 
 function handleError(res, error, message) {
-  console.error(`Owner Reports Error: ${error.message}`);
+  console.error("Owner Reports Error:", error);
 
   return res.status(500).json({
     success: false,
@@ -74,15 +74,24 @@ function getDateRange(req, res) {
 // Only the latest payment record is checked.
 // Payment must be Approved.
 // Order must not be Pending, Rejected, or Cancelled.
+//
+// TiDB compatibility:
+// Use a derived table instead of a subquery inside
+// the JOIN ON condition.
 // --------------------------------------------------
 
 const APPROVED_SALES_JOIN = `
+  INNER JOIN (
+    SELECT
+      order_id,
+      MAX(id) AS latest_payment_id
+    FROM customer_payments
+    GROUP BY order_id
+  ) latest_payment
+    ON latest_payment.order_id = o.id
+
   INNER JOIN customer_payments p
-    ON p.id = (
-      SELECT MAX(p2.id)
-      FROM customer_payments p2
-      WHERE p2.order_id = o.id
-    )
+    ON p.id = latest_payment.latest_payment_id
     AND p.payment_status = 'Approved'
 `;
 
@@ -469,26 +478,30 @@ const getOrderStatusReport = async (req, res) => {
 
     if (status === "Completed" || status === "Delivered") {
       // Delivered is accepted as an old frontend alias.
-      paymentJoin = `
-        ${APPROVED_SALES_JOIN}
-      `;
+      paymentJoin = APPROVED_SALES_JOIN;
 
-      statusCondition = `
-        ${APPROVED_SALES_CONDITION}
-      `;
+      statusCondition = APPROVED_SALES_CONDITION;
+
     } else if (status === "Rejected") {
       statusCondition = `
         AND o.order_status = 'Rejected'
       `;
+
     } else {
       // All = approved completed sales + rejected orders.
+      // Use a derived table for the latest payment.
       paymentJoin = `
+        LEFT JOIN (
+          SELECT
+            order_id,
+            MAX(id) AS latest_payment_id
+          FROM customer_payments
+          GROUP BY order_id
+        ) latest_payment
+          ON latest_payment.order_id = o.id
+
         LEFT JOIN customer_payments p
-          ON p.id = (
-            SELECT MAX(p2.id)
-            FROM customer_payments p2
-            WHERE p2.order_id = o.id
-          )
+          ON p.id = latest_payment.latest_payment_id
       `;
 
       statusCondition = `
