@@ -59,8 +59,14 @@ export default function HomeHeader() {
 
         const data = await response.json();
 
-        setLogo(data.logo || null);
-        setLogoFailed(false);
+console.log("Homepage logo API response:", data);
+
+console.log("Logo object:", data.logo);
+
+console.log("Logo image path:", data.logo?.image_path);
+
+setLogo(data.logo || null);
+setLogoFailed(false);
       } catch (error) {
         if (error.name !== "AbortError") {
           console.warn("Homepage logo could not be loaded:", error);
@@ -78,7 +84,9 @@ export default function HomeHeader() {
     () => getImageUrl(logo?.image_path),
     [logo?.image_path]
   );
-
+  useEffect(() => {
+  console.log("Generated logo URL:", logoUrl);
+}, [logoUrl]);
   function closeMenu() {
     setExpanded(false);
   }
