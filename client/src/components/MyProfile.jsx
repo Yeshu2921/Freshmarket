@@ -2,7 +2,11 @@
 import { useEffect, useState } from "react";
 import "./MyProfile.css";
 
-const API = "http://localhost:5134/api";
+const API =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
+
+const API_ORIGIN = API.replace(/\/api\/?$/, "");
 
 function MyProfile({ user = {}, onClose, onUserUpdated }) {
   const [form, setForm] = useState({
@@ -208,10 +212,10 @@ function MyProfile({ user = {}, onClose, onUserUpdated }) {
   }
 
   const photoUrl = preview
-    ? /^(https?:\/\/|data:|blob:)/i.test(preview)
-      ? preview
-      : `http://localhost:5134/${preview.replace(/^\/+/, "")}`
-    : "";
+  ? /^(https?:\/\/|data:|blob:)/i.test(preview)
+    ? preview
+    : `${API_ORIGIN}/${preview.replace(/^\/+/, "")}`
+  : "";
 
   return (
     <div
