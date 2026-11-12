@@ -1,7 +1,8 @@
 
 import { io } from "socket.io-client";
 
-const SOCKET_URL = "http://localhost:5134";
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL || "http://localhost:5134";
 
 let socket = null;
 
@@ -17,12 +18,10 @@ export function connectSocket() {
     return null;
   }
 
-  // Reuse an existing connection.
   if (socket?.connected) {
     return socket;
   }
 
-  // Create socket connection.
   if (!socket) {
     socket = io(SOCKET_URL, {
       autoConnect: false,
@@ -33,7 +32,6 @@ export function connectSocket() {
     });
   }
 
-  // Send the current login token.
   socket.auth = {
     token,
   };
