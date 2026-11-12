@@ -6,11 +6,37 @@ const { emitToUser } = require("../socket/socketServer");
 const { createNotification } = require("./notificationController");
 
 const BACKEND_ROOT = path.join(__dirname, "..");
+
 const MESSAGE_UPLOAD_ROOT = path.join(
   BACKEND_ROOT,
   "private_uploads",
   "messages"
 );
+
+// =============================================
+// ID GENERATOR TABLES
+// =============================================
+
+const ID_GENERATORS = {
+  conversations: "conversation_id_generator",
+  messages: "message_id_generator",
+  deletions: "message_deletion_id_generator",
+};
+
+// Only the predefined generator table names are accepted.
+async function generateId(connection, generatorType) {
+  const generatorTable = ID_GENERATORS[generatorType];
+
+  if (!generatorTable) {
+    throw new Error("Invalid ID generator type.");
+  }
+
+  const [result] = await connection.execute(
+    `INSERT INTO ${generatorTable} () VALUES ()`
+  );
+
+  return result.insertId;
+}
 
 // =============================================
 // HELPERS
@@ -30,6 +56,7 @@ function handleError(res, error, message) {
 
 function validId(value) {
   const id = Number(value);
+
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
@@ -41,14 +68,17 @@ async function removeUploadedFile(file) {
 
 function attachmentUrl(messageId, deletedAt) {
   if (deletedAt) return null;
+
   return `/api/messages/${messageId}/attachment`;
 }
 
 async function getConversationUsers(conversationId) {
   const [rows] = await db.execute(
-    `SELECT user_id
-     FROM conversation_participants
-     WHERE conversation_id = ?`,
+    `
+    SELECT user_id
+    FROM conversation_participants
+    WHERE conversation_id = ?
+    `,
     [conversationId]
   );
 
@@ -74,11 +104,13 @@ async function getFormattedMessage(messageId, currentUserId) {
       sender.last_name AS sender_last_name,
       sender.profile_image AS sender_profile_image,
       m.message_type,
+
       CASE
         WHEN m.deleted_for_everyone_at IS NOT NULL
           THEN 'This message was deleted'
         ELSE m.message_text
       END AS message_text,
+
       m.attachment_name,
       m.attachment_mime,
       m.attachment_size,
@@ -86,9 +118,16 @@ async function getFormattedMessage(messageId, currentUserId) {
       m.deleted_for_everyone_at,
       m.created_at,
       m.attachment_path,
-      CASE WHEN m.sender_id = ? THEN 1 ELSE 0 END AS is_mine
+
+      CASE
+        WHEN m.sender_id = ? THEN 1
+        ELSE 0
+      END AS is_mine
+
     FROM messages m
-    INNER JOIN users sender ON sender.id = m.sender_id
+    INNER JOIN users sender
+      ON sender.id = m.sender_id
+
     WHERE m.id = ?
     LIMIT 1
     `,
@@ -142,35 +181,46 @@ async function getContacts(req, res) {
             CASE
               WHEN m.deleted_for_everyone_at IS NOT NULL
                 THEN 'This message was deleted'
+
               WHEN m.message_type <> 'text'
                 THEN CONCAT(
                   UPPER(LEFT(m.message_type, 1)),
                   SUBSTRING(m.message_type, 2)
                 )
+
               ELSE COALESCE(m.message_text, '')
             END
+
           FROM messages m
+
           WHERE m.conversation_id = c.id
+
             AND NOT EXISTS (
               SELECT 1
               FROM message_deletions md
               WHERE md.message_id = m.id
                 AND md.user_id = ?
             )
+
           ORDER BY m.id DESC
           LIMIT 1
         ) AS last_message,
 
         (
           SELECT COUNT(*)
+
           FROM messages m
+
           WHERE m.conversation_id = c.id
             AND m.sender_id <> ?
+
             AND m.created_at > COALESCE(
               my_cp.last_read_at,
               '1970-01-01 00:00:00'
             )
+
             AND m.deleted_for_everyone_at IS NULL
+
             AND NOT EXISTS (
               SELECT 1
               FROM message_deletions md
@@ -237,7 +287,11 @@ async function getContacts(req, res) {
       contacts,
     });
   } catch (error) {
-    return handleError(res, error, "Failed to load contacts.");
+    return handleError(
+      res,
+      error,
+      "Failed to load contacts."
+    );
   }
 }
 
@@ -260,13 +314,23 @@ async function openConversation(req, res) {
     }
 
     connection = await db.getConnection();
+
     await connection.beginTransaction();
 
     const [users] = await connection.execute(
       `
-      SELECT id, first_name, last_name, role, profile_image
+      SELECT
+        id,
+        first_name,
+        last_name,
+        role,
+        profile_image
+
       FROM users
-      WHERE id = ? AND is_active = 1
+
+      WHERE id = ?
+        AND is_active = 1
+
       LIMIT 1
       `,
       [otherUserId]
@@ -284,16 +348,21 @@ async function openConversation(req, res) {
     const [existing] = await connection.execute(
       `
       SELECT cp1.conversation_id
+
       FROM conversation_participants cp1
+
       INNER JOIN conversation_participants cp2
         ON cp2.conversation_id = cp1.conversation_id
+
       WHERE cp1.user_id = ?
         AND cp2.user_id = ?
+
         AND (
           SELECT COUNT(*)
           FROM conversation_participants cp3
           WHERE cp3.conversation_id = cp1.conversation_id
         ) = 2
+
       ORDER BY cp1.conversation_id DESC
       LIMIT 1
       `,
@@ -305,12 +374,24 @@ async function openConversation(req, res) {
     if (existing.length) {
       conversationId = existing[0].conversation_id;
     } else {
-      const [result] = await connection.execute(
-        `INSERT INTO conversations () VALUES ()`
+      // Generate a unique conversation ID.
+      const generatedId = await generateId(
+        connection,
+        "conversations"
       );
 
-      conversationId = result.insertId;
+      conversationId = generatedId;
 
+      // Insert conversation using generated ID.
+      await connection.execute(
+        `
+        INSERT INTO conversations (id)
+        VALUES (?)
+        `,
+        [conversationId]
+      );
+
+      // Add both conversation participants.
       await connection.execute(
         `
         INSERT INTO conversation_participants
@@ -339,7 +420,11 @@ async function openConversation(req, res) {
       await connection.rollback().catch(() => {});
     }
 
-    return handleError(res, error, "Could not open the conversation.");
+    return handleError(
+      res,
+      error,
+      "Could not open the conversation."
+    );
   } finally {
     if (connection) connection.release();
   }
@@ -365,7 +450,10 @@ async function getMessages(req, res) {
       `
       SELECT id
       FROM conversation_participants
-      WHERE conversation_id = ? AND user_id = ?
+
+      WHERE conversation_id = ?
+        AND user_id = ?
+
       LIMIT 1
       `,
       [conversationId, currentUserId]
@@ -381,8 +469,11 @@ async function getMessages(req, res) {
     await db.execute(
       `
       UPDATE conversation_participants
+
       SET last_read_at = NOW()
-      WHERE conversation_id = ? AND user_id = ?
+
+      WHERE conversation_id = ?
+        AND user_id = ?
       `,
       [conversationId, currentUserId]
     );
@@ -391,7 +482,11 @@ async function getMessages(req, res) {
     await db.execute(
       `
       UPDATE notifications
-      SET is_read = 1, read_at = COALESCE(read_at, NOW())
+
+      SET
+        is_read = 1,
+        read_at = COALESCE(read_at, NOW())
+
       WHERE user_id = ?
         AND notification_type = 'new_message'
         AND reference_id = ?
@@ -440,12 +535,18 @@ async function getMessages(req, res) {
         m.created_at,
         m.attachment_path,
 
-        CASE WHEN m.sender_id = ? THEN 1 ELSE 0 END AS is_mine
+        CASE
+          WHEN m.sender_id = ? THEN 1
+          ELSE 0
+        END AS is_mine
 
       FROM messages m
-      INNER JOIN users sender ON sender.id = m.sender_id
+
+      INNER JOIN users sender
+        ON sender.id = m.sender_id
 
       WHERE m.conversation_id = ?
+
         AND NOT EXISTS (
           SELECT 1
           FROM message_deletions md
@@ -469,14 +570,18 @@ async function getMessages(req, res) {
       };
 
       delete formatted.attachment_path;
+
       return formatted;
     });
 
     const [countRows] = await db.execute(
       `
       SELECT COUNT(*) AS unread_count
+
       FROM notifications
-      WHERE user_id = ? AND is_read = 0
+
+      WHERE user_id = ?
+        AND is_read = 0
       `,
       [currentUserId]
     );
@@ -516,12 +621,15 @@ async function getMessages(req, res) {
 
 async function sendMessage(req, res) {
   let uploadedFile = req.file;
+  let connection;
 
   try {
     const currentUserId = req.user.id;
     const conversationId = validId(req.params.conversationId);
 
-    const messageText = String(req.body.messageText || "").trim();
+    const messageText = String(
+      req.body.messageText || ""
+    ).trim();
 
     if (!conversationId) {
       await removeUploadedFile(uploadedFile);
@@ -548,10 +656,28 @@ async function sendMessage(req, res) {
       });
     }
 
-    const [membership] = await db.execute(
+    const messageType = uploadedFile
+      ? uploadedFile.messageCategory
+      : "text";
+
+    const attachmentPath = uploadedFile
+      ? path
+          .relative(BACKEND_ROOT, uploadedFile.path)
+          .split(path.sep)
+          .join("/")
+      : null;
+
+    connection = await db.getConnection();
+
+    await connection.beginTransaction();
+
+    // Verify conversation membership.
+    const [membership] = await connection.execute(
       `
       SELECT user_id
+
       FROM conversation_participants
+
       WHERE conversation_id = ?
       `,
       [conversationId]
@@ -559,8 +685,12 @@ async function sendMessage(req, res) {
 
     if (
       membership.length !== 2 ||
-      !membership.some((row) => row.user_id === currentUserId)
+      !membership.some(
+        (row) => row.user_id === currentUserId
+      )
     ) {
+      await connection.rollback();
+
       await removeUploadedFile(uploadedFile);
 
       return res.status(403).json({
@@ -569,17 +699,17 @@ async function sendMessage(req, res) {
       });
     }
 
-    const messageType = uploadedFile
-      ? uploadedFile.messageCategory
-      : "text";
+    // Generate a unique message ID.
+    const messageId = await generateId(
+      connection,
+      "messages"
+    );
 
-    const attachmentPath = uploadedFile
-      ? path.relative(BACKEND_ROOT, uploadedFile.path).split(path.sep).join("/")
-      : null;
-
-    const [result] = await db.execute(
+    // Save the message with its generated ID.
+    await connection.execute(
       `
       INSERT INTO messages (
+        id,
         conversation_id,
         sender_id,
         message_type,
@@ -589,9 +719,11 @@ async function sendMessage(req, res) {
         attachment_mime,
         attachment_size
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
+        messageId,
         conversationId,
         currentUserId,
         messageType,
@@ -603,17 +735,30 @@ async function sendMessage(req, res) {
       ]
     );
 
-    await db.execute(
-      `UPDATE conversations SET updated_at = NOW() WHERE id = ?`,
+    // Update conversation activity.
+    await connection.execute(
+      `
+      UPDATE conversations
+
+      SET updated_at = NOW()
+
+      WHERE id = ?
+      `,
       [conversationId]
     );
 
+    await connection.commit();
+
+    // Release the database connection before notification work.
+    connection.release();
+    connection = null;
+
     const message = await getFormattedMessage(
-      result.insertId,
+      messageId,
       currentUserId
     );
 
-    // Notify the other participant after the message is saved.
+    // Notify the other participant after saving the message.
     const recipientIds = membership
       .map((row) => row.user_id)
       .filter((id) => id !== currentUserId);
@@ -631,7 +776,9 @@ async function sendMessage(req, res) {
           userId: recipientId,
           type: "new_message",
           title: `New message from ${req.user.first_name}`,
-          message: messageText || `Sent an ${messageType} attachment.`,
+          message:
+            messageText ||
+            `Sent an ${messageType} attachment.`,
           referenceId: conversationId,
         });
       } catch (notificationError) {
@@ -648,8 +795,19 @@ async function sendMessage(req, res) {
       data: message,
     });
   } catch (error) {
+    if (connection) {
+      await connection.rollback().catch(() => {});
+    }
+
     await removeUploadedFile(uploadedFile);
-    return handleError(res, error, "Failed to send message.");
+
+    return handleError(
+      res,
+      error,
+      "Failed to send message."
+    );
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -661,9 +819,16 @@ async function editMessage(req, res) {
   try {
     const currentUserId = req.user.id;
     const messageId = validId(req.params.messageId);
-    const messageText = String(req.body.messageText || "").trim();
 
-    if (!messageId || !messageText || messageText.length > 5000) {
+    const messageText = String(
+      req.body.messageText || ""
+    ).trim();
+
+    if (
+      !messageId ||
+      !messageText ||
+      messageText.length > 5000
+    ) {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid message.",
@@ -673,7 +838,11 @@ async function editMessage(req, res) {
     const [result] = await db.execute(
       `
       UPDATE messages
-      SET message_text = ?, edited_at = NOW()
+
+      SET
+        message_text = ?,
+        edited_at = NOW()
+
       WHERE id = ?
         AND sender_id = ?
         AND message_type = 'text'
@@ -706,7 +875,11 @@ async function editMessage(req, res) {
       data: message,
     });
   } catch (error) {
-    return handleError(res, error, "Failed to edit message.");
+    return handleError(
+      res,
+      error,
+      "Failed to edit message."
+    );
   }
 }
 
@@ -729,7 +902,9 @@ async function deleteForEveryone(req, res) {
     const [result] = await db.execute(
       `
       UPDATE messages
+
       SET deleted_for_everyone_at = NOW()
+
       WHERE id = ?
         AND sender_id = ?
         AND deleted_for_everyone_at IS NULL
@@ -752,7 +927,10 @@ async function deleteForEveryone(req, res) {
     await emitToConversation(
       message.conversation_id,
       "message:deleted",
-      { messageId, conversationId: message.conversation_id }
+      {
+        messageId,
+        conversationId: message.conversation_id,
+      }
     );
 
     return res.status(200).json({
@@ -761,7 +939,11 @@ async function deleteForEveryone(req, res) {
       messageId,
     });
   } catch (error) {
-    return handleError(res, error, "Failed to delete message.");
+    return handleError(
+      res,
+      error,
+      "Failed to delete message."
+    );
   }
 }
 
@@ -770,6 +952,8 @@ async function deleteForEveryone(req, res) {
 // =============================================
 
 async function deleteForMe(req, res) {
+  let connection;
+
   try {
     const currentUserId = req.user.id;
     const messageId = validId(req.params.messageId);
@@ -781,32 +965,60 @@ async function deleteForMe(req, res) {
       });
     }
 
-    const [messages] = await db.execute(
+    connection = await db.getConnection();
+
+    await connection.beginTransaction();
+
+    // Verify that the message belongs to a conversation
+    // in which the current user is a participant.
+    const [messages] = await connection.execute(
       `
       SELECT m.id
+
       FROM messages m
+
       INNER JOIN conversation_participants cp
         ON cp.conversation_id = m.conversation_id
-      WHERE m.id = ? AND cp.user_id = ?
+
+      WHERE m.id = ?
+        AND cp.user_id = ?
+
       LIMIT 1
       `,
       [messageId, currentUserId]
     );
 
     if (!messages.length) {
+      await connection.rollback();
+
       return res.status(404).json({
         success: false,
         message: "Message not found.",
       });
     }
 
-    await db.execute(
-      `
-      INSERT IGNORE INTO message_deletions (message_id, user_id)
-      VALUES (?, ?)
-      `,
-      [messageId, currentUserId]
+    // Generate a unique deletion ID.
+    const deletionId = await generateId(
+      connection,
+      "deletions"
     );
+
+    // Insert the personal deletion record.
+    // The unique key (message_id, user_id) prevents duplicates.
+    await connection.execute(
+      `
+      INSERT IGNORE INTO message_deletions (
+        id,
+        message_id,
+        user_id
+      )
+
+      VALUES (?, ?, ?)
+      `,
+      [deletionId, messageId, currentUserId]
+    );
+
+    await connection.commit();
 
     return res.status(200).json({
       success: true,
@@ -814,7 +1026,17 @@ async function deleteForMe(req, res) {
       messageId,
     });
   } catch (error) {
-    return handleError(res, error, "Failed to hide message.");
+    if (connection) {
+      await connection.rollback().catch(() => {});
+    }
+
+    return handleError(
+      res,
+      error,
+      "Failed to hide message."
+    );
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -840,19 +1062,24 @@ async function downloadAttachment(req, res) {
         m.attachment_path,
         m.attachment_name,
         m.attachment_mime
+
       FROM messages m
+
       INNER JOIN conversation_participants cp
         ON cp.conversation_id = m.conversation_id
+
       WHERE m.id = ?
         AND cp.user_id = ?
         AND m.deleted_for_everyone_at IS NULL
         AND m.attachment_path IS NOT NULL
+
         AND NOT EXISTS (
           SELECT 1
           FROM message_deletions md
           WHERE md.message_id = m.id
             AND md.user_id = ?
         )
+
       LIMIT 1
       `,
       [messageId, currentUserId, currentUserId]
@@ -865,8 +1092,13 @@ async function downloadAttachment(req, res) {
       });
     }
 
-    const storedPath = path.resolve(BACKEND_ROOT, rows[0].attachment_path);
-    const allowedRoot = path.resolve(MESSAGE_UPLOAD_ROOT) + path.sep;
+    const storedPath = path.resolve(
+      BACKEND_ROOT,
+      rows[0].attachment_path
+    );
+
+    const allowedRoot =
+      path.resolve(MESSAGE_UPLOAD_ROOT) + path.sep;
 
     if (!storedPath.startsWith(allowedRoot)) {
       return res.status(403).json({
@@ -890,12 +1122,24 @@ async function downloadAttachment(req, res) {
       "Content-Disposition",
       `inline; filename*=UTF-8''${safeName}`
     );
-    res.setHeader("Content-Type", rows[0].attachment_mime);
-    res.setHeader("Cache-Control", "private, no-store");
+
+    res.setHeader(
+      "Content-Type",
+      rows[0].attachment_mime
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "private, no-store"
+    );
 
     return res.sendFile(storedPath);
   } catch (error) {
-    return handleError(res, error, "Failed to load attachment.");
+    return handleError(
+      res,
+      error,
+      "Failed to load attachment."
+    );
   }
 }
 
