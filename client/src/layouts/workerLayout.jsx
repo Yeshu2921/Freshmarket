@@ -13,7 +13,7 @@ import WorkerSalesHistory from "../worker/pages/WorkerSalesHistory";
 
 import Messages from "../components/messages/Messages";
 
-import "./WorkerLayout.css";
+import "./workerLayout.css";
 
 function WorkerLayout({ name = "Worker", onLogout, user }) {
   const navigate = useNavigate();
