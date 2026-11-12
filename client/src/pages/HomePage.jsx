@@ -9,8 +9,12 @@ import {
 import { Link } from "react-router-dom";
 import "./HomePage.css";
 
-const API_BASE = "http://localhost:5134/api";
-const IMAGE_BASE = "http://localhost:5134";
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
+
+const IMAGE_BASE =
+  API_BASE.replace(/\/api\/?$/, "");
 
 // Convert the image path saved in the database into a browser URL.
 const getImageUrl = (imagePath) => {
