@@ -6,7 +6,7 @@ import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 
-import WorkerDashboard from "../worker/pages/WorkerDashboard";
+import WorkerDashboard from "../worker/pages/workerDashboard";
 import WorkerProducts from "../worker/pages/WorkerProducts";
 import WorkerOnlineOrders from "../worker/pages/WorkerOnlineOrders";
 import WorkerSalesHistory from "../worker/pages/WorkerSalesHistory";
