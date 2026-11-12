@@ -3,7 +3,9 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import "./OwnerLogin.css";
 
-const API = "http://localhost:5134/api";
+const API =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
 
 export default function OwnerLogin({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -84,6 +86,16 @@ export default function OwnerLogin({ onLogin }) {
   return (
     <div className="fm-login-page">
       <div className="fm-login-card">
+
+        {/* BACK TO HOMEPAGE */}
+        <div className="fm-login-back-home">
+          <Link to="/">
+            <i className="bi bi-arrow-left me-2" />
+            Back to Homepage
+          </Link>
+        </div>
+
+        {/* BRAND */}
         <div className="fm-login-brand">
           <div className="fm-login-logo">
             <i className="bi bi-shop" />
@@ -93,11 +105,13 @@ export default function OwnerLogin({ onLogin }) {
           <p>Supermarket Management System</p>
         </div>
 
+        {/* LOGIN HEADING */}
         <div className="fm-login-heading">
           <h2>Welcome back</h2>
           <p>Sign in to your account</p>
         </div>
 
+        {/* ERROR MESSAGE */}
         {error && (
           <div
             className="alert alert-danger fm-login-alert"
@@ -107,6 +121,7 @@ export default function OwnerLogin({ onLogin }) {
           </div>
         )}
 
+        {/* LOGIN FORM */}
         <form onSubmit={handleSubmit}>
           <div className="mb-3">
             <label
@@ -181,12 +196,14 @@ export default function OwnerLogin({ onLogin }) {
             </div>
           </div>
 
+          {/* FORGOT PASSWORD */}
           <div className="fm-login-forgot">
             <Link to="/forgot-password">
               Forgot password?
             </Link>
           </div>
 
+          {/* SUBMIT BUTTON */}
           <button
             type="submit"
             className="btn btn-primary w-100 fm-login-button"
@@ -206,10 +223,12 @@ export default function OwnerLogin({ onLogin }) {
           </button>
         </form>
 
+        {/* FOOTER */}
         <div className="fm-login-footer">
           <i className="bi bi-shield-lock me-1" />
           Authorized users only
         </div>
+
       </div>
     </div>
   );
