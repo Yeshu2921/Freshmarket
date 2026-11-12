@@ -1,3 +1,4 @@
+
 const db = require("../db");
 const fs = require("fs");
 const path = require("path");
@@ -239,12 +240,17 @@ const getAllOwnerOrders = async (req, res) => {
        LEFT JOIN customer_profiles cp
           ON cp.id = co.customer_id
 
+       LEFT JOIN (
+          SELECT
+            order_id,
+            MAX(id) AS latest_payment_id
+          FROM customer_payments
+          GROUP BY order_id
+       ) latest_payment
+          ON latest_payment.order_id = co.id
+
        LEFT JOIN customer_payments pay
-          ON pay.id = (
-            SELECT MAX(p2.id)
-            FROM customer_payments p2
-            WHERE p2.order_id = co.id
-          )
+          ON pay.id = latest_payment.latest_payment_id
 
        ORDER BY co.created_at DESC, co.id DESC`
     );
@@ -317,12 +323,17 @@ const getOwnerOrderDetails = async (req, res) => {
        LEFT JOIN customer_profiles cp
           ON cp.id = co.customer_id
 
+       LEFT JOIN (
+          SELECT
+            order_id,
+            MAX(id) AS latest_payment_id
+          FROM customer_payments
+          GROUP BY order_id
+       ) latest_payment
+          ON latest_payment.order_id = co.id
+
        LEFT JOIN customer_payments pay
-          ON pay.id = (
-            SELECT MAX(p2.id)
-            FROM customer_payments p2
-            WHERE p2.order_id = co.id
-          )
+          ON pay.id = latest_payment.latest_payment_id
 
        LEFT JOIN users reviewer
           ON reviewer.id = pay.reviewed_by
@@ -680,7 +691,7 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
     }
   }
 };
-  
+
 // ======================================================
 // PATCH /api/owner-orders/:orderId/reset-pin
 //
