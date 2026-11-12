@@ -153,7 +153,7 @@ function About() {
             <div className="col-lg-6">
               <div className="fm-about-image-wrapper">
                 <img
-                  src="../public/about/about2.jfif"
+                  src="../about/about2.jfif"
                   alt="Fresh supermarket vegetables and groceries"
                   className="fm-about-main-image"
                   loading="lazy"
@@ -292,7 +292,7 @@ function About() {
               </p>
 
               <img
-                src="../public/about/about3.jfif"
+                src="../about/about3.jfif"
                 alt="Customer shopping in a supermarket"
                 className="fm-guide-image"
                 loading="lazy"
