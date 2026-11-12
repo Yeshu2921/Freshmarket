@@ -24,6 +24,9 @@ export function NotificationProvider({ children, user }) {
   // =========================================
   // LOAD NOTIFICATIONS
   // =========================================
+  const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
 
   const loadNotifications = useCallback(async () => {
     const token = sessionStorage.getItem("freshmartToken");
@@ -32,7 +35,7 @@ export function NotificationProvider({ children, user }) {
 
     try {
       const response = await fetch(
-        "http://localhost:5134/api/notifications",
+        `${API_BASE}/notifications`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -64,7 +67,7 @@ export function NotificationProvider({ children, user }) {
 
     try {
       const response = await fetch(
-        "http://localhost:5134/api/messages/contacts",
+        `${API_BASE}/messages/contacts`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -194,7 +197,7 @@ export function NotificationProvider({ children, user }) {
 
     try {
       const response = await fetch(
-        `http://localhost:5134/api/notifications/${id}/read`,
+        `${API_BASE}/notifications/${id}/read`,
         {
           method: "PATCH",
           headers: {
@@ -234,7 +237,7 @@ export function NotificationProvider({ children, user }) {
 
     try {
       const response = await fetch(
-        "http://localhost:5134/api/notifications/read-all",
+        `${API_BASE}/notifications/read-all`,
         {
           method: "PATCH",
           headers: {
