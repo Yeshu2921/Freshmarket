@@ -153,3 +153,44 @@
     padding: 20px 17px 15px;
   }
 }
+
+/* =====================================
+   BACK TO HOMEPAGE
+===================================== */
+
+.fm-login-back-home {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 22px;
+}
+
+.fm-login-back-home a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #245638;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.fm-login-back-home a:hover {
+  color: #16834a;
+  transform: translateX(-3px);
+}
+
+.fm-login-back-home a i {
+  font-size: 16px;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 480px) {
+  .fm-login-back-home {
+    margin-bottom: 18px;
+  }
+
+  .fm-login-back-home a {
+    font-size: 13px;
+  }
+}
