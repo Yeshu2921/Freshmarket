@@ -1,15 +1,35 @@
 
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
+
+const API_ORIGIN = API_BASE.replace(/\/api\/?$/, "");
+
+// =============================================
+// HELPERS
+// =============================================
+
 function getInitials(firstName, lastName) {
-  return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "?";
+  return (
+    `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "?"
+  );
 }
 
-function getProfileImage(path) {
-  if (!path) return null;
+function getProfileImage(imagePath) {
+  if (!imagePath) return null;
 
-  if (path.startsWith("http")) return path;
+  const image = String(imagePath).trim();
 
-  return `http://localhost:5134${path.startsWith("/") ? "" : "/"}${path}`;
+  if (/^(https?:\/\/|data:|blob:)/i.test(image)) {
+    return image;
+  }
+
+  return `${API_ORIGIN}/${image.replace(/^\/+/, "")}`;
 }
+
+// =============================================
+// CONTACT LIST
+// =============================================
 
 function ContactList({
   contacts = [],
@@ -18,12 +38,14 @@ function ContactList({
 }) {
   return (
     <aside className="fm-contacts-section">
+
       <div className="fm-contacts-heading">
         <h5>Contacts</h5>
         <span>{contacts.length}</span>
       </div>
 
       <div className="fm-contacts-list">
+
         {contacts.length === 0 ? (
           <p className="fm-no-contacts">
             No other active Owner or Worker accounts found.
@@ -40,11 +62,23 @@ function ContactList({
               }`}
               onClick={() => onSelectContact(contact)}
             >
+
+              {/* PROFILE PHOTO */}
+
               <div className="fm-contact-avatar">
+
                 {contact.profile_image ? (
                   <img
                     src={getProfileImage(contact.profile_image)}
                     alt={`${contact.first_name} ${contact.last_name}`}
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                      e.currentTarget.parentElement.textContent =
+                        getInitials(
+                          contact.first_name,
+                          contact.last_name
+                        );
+                    }}
                   />
                 ) : (
                   getInitials(
@@ -52,9 +86,13 @@ function ContactList({
                     contact.last_name
                   )
                 )}
+
               </div>
 
+              {/* CONTACT INFORMATION */}
+
               <div className="fm-contact-details">
+
                 <strong>
                   {contact.first_name} {contact.last_name}
                 </strong>
@@ -64,16 +102,21 @@ function ContactList({
                 <span>
                   {contact.last_message || "Start a conversation"}
                 </span>
+
               </div>
+
+              {/* UNREAD MESSAGE COUNT */}
 
               {Number(contact.unread_count) > 0 && (
                 <span className="fm-contact-unread">
                   {contact.unread_count}
                 </span>
               )}
+
             </button>
           ))
         )}
+
       </div>
     </aside>
   );
