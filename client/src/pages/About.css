@@ -25,7 +25,7 @@
   min-height: 490px;
   background:
     linear-gradient(90deg, rgba(10, 31, 49, .94), rgba(10, 31, 49, .55)),
-    url("../public/about/about1.jfif")
+    url("../about/about1.jfif")
     center/cover no-repeat;
 }
 
