@@ -5,7 +5,9 @@ import { Alert, Badge, Button, Card, Col, Form, InputGroup, Modal, Row, Spinner,
 } from "react-bootstrap";
 import "./CategoryManagement.css";
 
-const API = "http://localhost:5134/api";
+const API =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
 
 const emptyForm = {
   category_name: "",
