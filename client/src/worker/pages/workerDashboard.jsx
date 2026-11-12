@@ -14,7 +14,9 @@ import {
 
 import "./workerDashboard.css";
 
-const API_BASE = "http://localhost:5134/api";
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
 
 const currencyFormatter = new Intl.NumberFormat("en-ET", {
   style: "currency",
