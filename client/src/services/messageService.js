@@ -1,5 +1,5 @@
 
-const API_BASE = "http:const API_BASE =
+const API_BASE =
   import.meta.env.VITE_API_URL ||
   "https://freshmart-backend-70sy.onrender.com/api";
 
