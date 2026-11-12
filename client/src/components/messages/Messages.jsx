@@ -20,11 +20,9 @@ import MessageComposer from "./MessageComposer";
 
 import "./Messages.css";
 
-function getInitials(firstName, lastName) {
-  return (
-    `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "?"
-  );
-}
+// =============================================
+// API CONFIGURATION
+// =============================================
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
@@ -32,13 +30,31 @@ const API_BASE =
 
 const API_ORIGIN = API_BASE.replace(/\/api\/?$/, "");
 
-function getProfileImage(path) {
-  if (!path) return null;
+// =============================================
+// HELPERS
+// =============================================
 
-  if (path.startsWith("http")) return path;
-
-  return `${API_ORIGIN}${path.startsWith("/") ? "" : "/"}${path}`;
+function getInitials(firstName, lastName) {
+  return (
+    `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "?"
+  );
 }
+
+function getProfileImage(imagePath) {
+  if (!imagePath) return null;
+
+  const image = String(imagePath).trim();
+
+  if (/^(https?:\/\/|data:|blob:)/i.test(image)) {
+    return image;
+  }
+
+  return `${API_ORIGIN}/${image.replace(/^\/+/, "")}`;
+}
+
+// =============================================
+// MESSAGES COMPONENT
+// =============================================
 
 function Messages({ currentUser }) {
   const [contacts, setContacts] = useState([]);
@@ -66,8 +82,14 @@ function Messages({ currentUser }) {
       const result = await getContacts();
 
       setContacts(result.contacts || []);
+
+      return result.contacts || [];
     } catch (err) {
+      console.error("Load contacts error:", err);
+
       setError(err.message || "Unable to load contacts.");
+
+      throw err;
     }
   }, []);
 
@@ -81,10 +103,14 @@ function Messages({ currentUser }) {
     async function initialize() {
       setLoading(true);
 
-      await loadContacts();
-
-      if (active) {
-        setLoading(false);
+      try {
+        await loadContacts();
+      } catch (err) {
+        console.error("Messages initialization error:", err);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
@@ -111,6 +137,8 @@ function Messages({ currentUser }) {
         // Refresh unread counts after opening the conversation.
         await loadContacts();
       } catch (err) {
+        console.error("Load messages error:", err);
+
         setError(err.message || "Unable to load messages.");
       }
     },
@@ -127,6 +155,7 @@ function Messages({ currentUser }) {
     setSelectedContact(contact);
     setMessages([]);
     setConversationId(null);
+
     conversationIdRef.current = null;
 
     try {
@@ -148,6 +177,8 @@ function Messages({ currentUser }) {
 
       await loadConversationMessages(id);
     } catch (err) {
+      console.error("Open conversation error:", err);
+
       setError(err.message || "Unable to open conversation.");
     }
   };
@@ -221,12 +252,12 @@ function Messages({ currentUser }) {
         const messageId = String(message.id);
 
         if (
-  !message.attachment_url ||
-  message.deleted_for_everyone_at ||
-  attachmentUrlsRef.current[messageId]
-) {
-  continue;
-}
+          !message.attachment_url ||
+          message.deleted_for_everyone_at ||
+          attachmentUrlsRef.current[messageId]
+        ) {
+          continue;
+        }
 
         try {
           const url = await loadAttachment(message.id);
@@ -243,10 +274,7 @@ function Messages({ currentUser }) {
             [messageId]: url,
           }));
         } catch (err) {
-          console.error(
-            "Attachment loading error:",
-            err
-          );
+          console.error("Attachment loading error:", err);
         }
       }
     }
@@ -289,7 +317,11 @@ function Messages({ currentUser }) {
 
       return true;
     } catch (err) {
-      setError(err.message || "Unable to send message.");
+      console.error("Send message error:", err);
+
+      setError(
+        err.message || "Unable to send message. Please try again."
+      );
 
       return false;
     } finally {
@@ -319,6 +351,8 @@ function Messages({ currentUser }) {
 
       await loadConversationMessages(conversationId);
     } catch (err) {
+      console.error("Edit message error:", err);
+
       setError(err.message || "Unable to edit message.");
     }
   };
@@ -347,6 +381,8 @@ function Messages({ currentUser }) {
       await loadConversationMessages(conversationId);
       await loadContacts();
     } catch (err) {
+      console.error("Delete message error:", err);
+
       setError(err.message || "Unable to delete message.");
     }
   };
@@ -410,12 +446,16 @@ function Messages({ currentUser }) {
               <div className="fm-chat-header">
 
                 <div className="fm-contact-avatar">
+
                   {selectedContact.profile_image ? (
                     <img
                       src={getProfileImage(
                         selectedContact.profile_image
                       )}
-                      alt=""
+                      alt={`${selectedContact.first_name} ${selectedContact.last_name}`}
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
                     />
                   ) : (
                     getInitials(
@@ -423,6 +463,7 @@ function Messages({ currentUser }) {
                       selectedContact.last_name
                     )
                   )}
+
                 </div>
 
                 <div>
