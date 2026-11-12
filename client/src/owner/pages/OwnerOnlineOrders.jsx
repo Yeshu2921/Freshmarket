@@ -13,7 +13,9 @@ import {
   Table,
 } from "react-bootstrap";
 
-const API = "http://localhost:5134/api";
+const API =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
 
 const ORDER_STATUSES = [
   "Pending",
