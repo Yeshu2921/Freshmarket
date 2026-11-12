@@ -1,7 +1,8 @@
 
-const API_BASE =
+const API_BASE = (
   import.meta.env.VITE_API_URL ||
-  "https://freshmart-backend-70sy.onrender.com/api";
+  "https://freshmart-backend-70sy.onrender.com/api"
+).replace(/\/+$/, "");
 
 // =============================================
 // AUTHENTICATION
@@ -19,11 +20,26 @@ function getHeaders() {
   };
 }
 
+// =============================================
+// RESPONSE HANDLER
+// =============================================
+
 async function handleResponse(response) {
-  const data = await response.json();
+  let data;
+
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(
+      `Server returned an invalid response (${response.status}). Please check the backend logs.`
+    );
+  }
 
   if (!response.ok || !data.success) {
-    throw new Error(data.message || "Something went wrong.");
+    throw new Error(
+      data.message ||
+      `Request failed with status ${response.status}.`
+    );
   }
 
   return data;
@@ -35,6 +51,7 @@ async function handleResponse(response) {
 
 export async function getContacts() {
   const response = await fetch(`${API_BASE}/messages/contacts`, {
+    method: "GET",
     headers: getHeaders(),
   });
 
@@ -69,6 +86,7 @@ export async function getMessages(conversationId) {
   const response = await fetch(
     `${API_BASE}/messages/conversations/${conversationId}/messages`,
     {
+      method: "GET",
       headers: getHeaders(),
     }
   );
@@ -99,7 +117,11 @@ export async function sendMessage(
     `${API_BASE}/messages/conversations/${conversationId}/messages`,
     {
       method: "POST",
+
+      // Do not manually set Content-Type.
+      // The browser must add the multipart boundary.
       headers: getHeaders(),
+
       body: formData,
     }
   );
@@ -167,12 +189,22 @@ export async function loadAttachment(messageId) {
   const response = await fetch(
     `${API_BASE}/messages/messages/${messageId}/attachment`,
     {
+      method: "GET",
       headers: getHeaders(),
     }
   );
 
   if (!response.ok) {
-    throw new Error("Unable to load this attachment.");
+    let message = "Unable to load this attachment.";
+
+    try {
+      const data = await response.json();
+      message = data.message || message;
+    } catch {
+      // Keep the default message if the response isn't JSON.
+    }
+
+    throw new Error(message);
   }
 
   return URL.createObjectURL(await response.blob());
