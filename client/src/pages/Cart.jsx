@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "./Cart.css";
 
-const IMAGE_BASE = "http://localhost:5134";
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
+
+const IMAGE_BASE = API_BASE.replace(/\/api\/?$/, "");
 const CART_KEY = "freshmartCart";
 
 function readCart() {
