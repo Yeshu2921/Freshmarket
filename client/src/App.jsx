@@ -15,7 +15,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 
 import HomeLayout from "./layouts/HomeLayout";
-import workerLayout from "./layouts/WorkerLayout";
+import WorkerLayout from "./layouts/workerLayout";
 import OwnerLayout from "./layouts/OwnerLayout";
 import NotFound from "./components/NotFound";
 import OrderPage from "./pages/OrderPage";
