@@ -22,59 +22,73 @@ async function getOwnerDashboard(req, res) {
   try {
     // 1. Dashboard summary cards
     const summaryRows = await queryRows(`
-  SELECT
-    (
-      SELECT COUNT(*)
-      FROM products
-      WHERE status = 'Active'
-    ) AS totalProducts,
+      SELECT
+        (
+          SELECT COUNT(*)
+          FROM products
+          WHERE status = 'Active'
+        ) AS totalProducts,
 
-    (
-      SELECT COALESCE(SUM(o.grand_total), 0)
-      FROM customer_orders o
-      INNER JOIN customer_payments p
-        ON p.id = (
-          SELECT MAX(p2.id)
-          FROM customer_payments p2
-          WHERE p2.order_id = o.id
-        )
-      WHERE p.payment_status = 'Approved'
-        AND o.order_status NOT IN ('Cancelled', 'Rejected')
-        AND COALESCE(p.reviewed_at, o.created_at)
-            >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-        AND COALESCE(p.reviewed_at, o.created_at) <= NOW()
-    ) AS todaySales,
+        (
+          SELECT COALESCE(SUM(o.grand_total), 0)
+          FROM customer_orders o
 
-    (
-      SELECT COUNT(*)
-      FROM users
-      WHERE role IN ('owner', 'worker')
-    ) AS totalUsers,
+          INNER JOIN (
+            SELECT
+              order_id,
+              MAX(id) AS latest_payment_id
+            FROM customer_payments
+            GROUP BY order_id
+          ) latest_payment
+            ON latest_payment.order_id = o.id
 
-    (
-      SELECT COUNT(*)
-      FROM products
-      WHERE status = 'Active'
-        AND quantity <= 10
-    ) AS lowStockItems,
+          INNER JOIN customer_payments p
+            ON p.id = latest_payment.latest_payment_id
 
-    (
-      SELECT COALESCE(SUM(o.grand_total), 0)
-      FROM customer_orders o
-      INNER JOIN customer_payments p
-        ON p.id = (
-          SELECT MAX(p2.id)
-          FROM customer_payments p2
-          WHERE p2.order_id = o.id
-        )
-      WHERE p.payment_status = 'Approved'
-        AND o.order_status NOT IN ('Cancelled', 'Rejected')
-        AND COALESCE(p.reviewed_at, o.created_at)
-            >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
-        AND COALESCE(p.reviewed_at, o.created_at)
-            < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-    ) AS weekSales
-`);
+          WHERE p.payment_status = 'Approved'
+            AND o.order_status NOT IN ('Cancelled', 'Rejected')
+            AND COALESCE(p.reviewed_at, o.created_at)
+                >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            AND COALESCE(p.reviewed_at, o.created_at) <= NOW()
+        ) AS todaySales,
+
+        (
+          SELECT COUNT(*)
+          FROM users
+          WHERE role IN ('owner', 'worker')
+        ) AS totalUsers,
+
+        (
+          SELECT COUNT(*)
+          FROM products
+          WHERE status = 'Active'
+            AND quantity <= 10
+        ) AS lowStockItems,
+
+        (
+          SELECT COALESCE(SUM(o.grand_total), 0)
+          FROM customer_orders o
+
+          INNER JOIN (
+            SELECT
+              order_id,
+              MAX(id) AS latest_payment_id
+            FROM customer_payments
+            GROUP BY order_id
+          ) latest_payment
+            ON latest_payment.order_id = o.id
+
+          INNER JOIN customer_payments p
+            ON p.id = latest_payment.latest_payment_id
+
+          WHERE p.payment_status = 'Approved'
+            AND o.order_status NOT IN ('Cancelled', 'Rejected')
+            AND COALESCE(p.reviewed_at, o.created_at)
+                >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+            AND COALESCE(p.reviewed_at, o.created_at)
+                < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+        ) AS weekSales
+    `);
 
     const summary = summaryRows[0] || {};
 
@@ -86,38 +100,44 @@ async function getOwnerDashboard(req, res) {
     const today = dateRows[0].today;
 
     const salesRows = await queryRows(`
-  SELECT
-    DATE_FORMAT(
-      COALESCE(p.reviewed_at, o.created_at),
-      '%Y-%m-%d'
-    ) AS sales_date,
+      SELECT
+        DATE_FORMAT(
+          COALESCE(p.reviewed_at, o.created_at),
+          '%Y-%m-%d'
+        ) AS sales_date,
 
-    COALESCE(SUM(o.grand_total), 0) AS sales
+        COALESCE(SUM(o.grand_total), 0) AS sales
 
-  FROM customer_orders o
+      FROM customer_orders o
 
-  INNER JOIN customer_payments p
-    ON p.id = (
-      SELECT MAX(p2.id)
-      FROM customer_payments p2
-      WHERE p2.order_id = o.id
-    )
+      INNER JOIN (
+        SELECT
+          order_id,
+          MAX(id) AS latest_payment_id
+        FROM customer_payments
+        GROUP BY order_id
+      ) latest_payment
+        ON latest_payment.order_id = o.id
 
-  WHERE p.payment_status = 'Approved'
-    AND o.order_status NOT IN ('Cancelled', 'Rejected')
+      INNER JOIN customer_payments p
+        ON p.id = latest_payment.latest_payment_id
 
-    AND COALESCE(p.reviewed_at, o.created_at)
-        >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+      WHERE p.payment_status = 'Approved'
+        AND o.order_status NOT IN ('Cancelled', 'Rejected')
 
-    AND COALESCE(p.reviewed_at, o.created_at)
-        < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+        AND COALESCE(p.reviewed_at, o.created_at)
+            >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
 
-  GROUP BY DATE(
-    COALESCE(p.reviewed_at, o.created_at)
-  )
+        AND COALESCE(p.reviewed_at, o.created_at)
+            < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
 
-  ORDER BY sales_date ASC
-`);
+      GROUP BY DATE(
+        COALESCE(p.reviewed_at, o.created_at)
+      )
+
+      ORDER BY sales_date ASC
+    `);
+
     const salesMap = new Map(
       salesRows.map((row) => [
         row.sales_date,
@@ -169,8 +189,6 @@ async function getOwnerDashboard(req, res) {
     `);
 
     // 5. Low-stock products
-    
-    // 5. Low-stock products
     const lowStockProducts = await queryRows(`
       SELECT
         p.id,
@@ -185,7 +203,6 @@ async function getOwnerDashboard(req, res) {
       ORDER BY p.quantity ASC, p.name ASC
       LIMIT 10
     `);
-
 
     // 6. Send dashboard response
     return res.status(200).json({
@@ -215,7 +232,6 @@ async function getOwnerDashboard(req, res) {
         })),
       },
     });
-
   } catch (error) {
     return handleError(
       res,
