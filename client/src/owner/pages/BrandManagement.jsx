@@ -5,7 +5,9 @@ import { Alert, Badge, Button, Form, InputGroup, Modal, Spinner,
 } from "react-bootstrap";
 import "./BrandManagement.css";
 
-const API = "http://localhost:5134/api";
+const API =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
 
 const emptyForm = {
   brand_name: "",
