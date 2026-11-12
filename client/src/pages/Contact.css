@@ -30,7 +30,7 @@
   align-items: center;
   background:
     linear-gradient(90deg, rgba(10, 31, 49, .95), rgba(10, 31, 49, .65)),
-    url("../public/about/contact1.jfif")
+    url("../about/contact1.jfif")
     center/cover no-repeat;
 }
 
