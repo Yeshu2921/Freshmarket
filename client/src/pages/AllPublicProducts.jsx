@@ -16,8 +16,11 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import ProductSidebar from "../components/ProductSidebar";
 import "./AllPublicProducts.css";
 
-const API = "http://localhost:5134/api";
-const IMAGE_BASE = "http://localhost:5134";
+const API =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
+
+const IMAGE_BASE = API.replace(/\/api\/?$/, "");
 const CART_KEY = "freshmartCart";
 const CART_EVENT = "freshmart-cart-updated";
 const MOBILE_BREAKPOINT = 767;
