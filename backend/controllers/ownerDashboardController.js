@@ -131,9 +131,10 @@ async function getOwnerDashboard(req, res) {
         AND COALESCE(p.reviewed_at, o.created_at)
             < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
 
-      GROUP BY DATE(
-        COALESCE(p.reviewed_at, o.created_at)
-      )
+     GROUP BY DATE_FORMAT(
+  COALESCE(p.reviewed_at, o.created_at),
+  '%Y-%m-%d'
+)
 
       ORDER BY sales_date ASC
     `);
