@@ -26,7 +26,11 @@ function getInitials(firstName, lastName) {
   );
 }
 
-const API_ORIGIN = "http://localhost:5134";
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
+
+const API_ORIGIN = API_BASE.replace(/\/api\/?$/, "");
 
 function getProfileImage(path) {
   if (!path) return null;
