@@ -119,7 +119,6 @@ async function getFormattedMessage(messageId, currentUserId) {
 // 1. GET CONTACT LIST
 // =============================================
 
-
 async function getContacts(req, res) {
   try {
     const currentUserId = req.user.id;
@@ -238,7 +237,6 @@ async function getContacts(req, res) {
     return handleError(res, error, "Failed to load contacts.");
   }
 }
-
 
 // =============================================
 // 2. OPEN OR CREATE PRIVATE CONVERSATION
