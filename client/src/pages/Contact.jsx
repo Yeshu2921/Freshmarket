@@ -215,7 +215,7 @@ function Contact() {
 
               <div className="fm-contact-photo-wrapper">
                 <img
-                  src="../public/about/contact2.jfif"
+                  src="../about/contact2.jfif"
                   alt="Customer receiving assistance"
                   className="fm-contact-photo"
                   loading="lazy"
