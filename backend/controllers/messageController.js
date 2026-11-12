@@ -119,6 +119,7 @@ async function getFormattedMessage(messageId, currentUserId) {
 // 1. GET CONTACT LIST
 // =============================================
 
+
 async function getContacts(req, res) {
   try {
     const currentUserId = req.user.id;
@@ -178,22 +179,34 @@ async function getContacts(req, res) {
 
       FROM users u
 
+      LEFT JOIN (
+        SELECT
+          cp2.user_id AS other_user_id,
+          MAX(cp1.conversation_id) AS conversation_id
+
+        FROM conversation_participants cp1
+
+        INNER JOIN conversation_participants cp2
+          ON cp2.conversation_id = cp1.conversation_id
+          AND cp2.user_id <> cp1.user_id
+
+        INNER JOIN (
+          SELECT conversation_id
+          FROM conversation_participants
+          GROUP BY conversation_id
+          HAVING COUNT(*) = 2
+        ) private_conversations
+          ON private_conversations.conversation_id =
+             cp1.conversation_id
+
+        WHERE cp1.user_id = ?
+
+        GROUP BY cp2.user_id
+      ) user_conversations
+        ON user_conversations.other_user_id = u.id
+
       LEFT JOIN conversations c
-        ON c.id = (
-          SELECT cp1.conversation_id
-          FROM conversation_participants cp1
-          INNER JOIN conversation_participants cp2
-            ON cp2.conversation_id = cp1.conversation_id
-          WHERE cp1.user_id = ?
-            AND cp2.user_id = u.id
-            AND (
-              SELECT COUNT(*)
-              FROM conversation_participants cp3
-              WHERE cp3.conversation_id = cp1.conversation_id
-            ) = 2
-          ORDER BY cp1.conversation_id DESC
-          LIMIT 1
-        )
+        ON c.id = user_conversations.conversation_id
 
       LEFT JOIN conversation_participants my_cp
         ON my_cp.conversation_id = c.id
@@ -225,6 +238,7 @@ async function getContacts(req, res) {
     return handleError(res, error, "Failed to load contacts.");
   }
 }
+
 
 // =============================================
 // 2. OPEN OR CREATE PRIVATE CONVERSATION
