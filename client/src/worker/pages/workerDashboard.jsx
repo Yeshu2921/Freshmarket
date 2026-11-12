@@ -12,7 +12,7 @@ import {
   Spinner,
 } from "react-bootstrap";
 
-import "./WorkerDashboard.css";
+import "./workerDashboard.css";
 
 const API_BASE = "http://localhost:5134/api";
 
