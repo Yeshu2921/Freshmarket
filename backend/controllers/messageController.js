@@ -17,11 +17,14 @@ const MESSAGE_UPLOAD_ROOT = path.join(
 // =============================================
 
 function handleError(res, error, message) {
-  console.error("Message Controller Error:", error.message);
+  console.error("Message Controller Error:", error);
 
   return res.status(500).json({
     success: false,
     message,
+    ...(process.env.NODE_ENV !== "production" && {
+      error: error.message,
+    }),
   });
 }
 
