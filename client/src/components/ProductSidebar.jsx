@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import "./ProductSidebar.css";
 
-const API = "http://localhost:5134/api";
+const API =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
 
 function getRows(data) {
   if (Array.isArray(data)) return data;
