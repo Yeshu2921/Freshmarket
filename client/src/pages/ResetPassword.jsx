@@ -4,8 +4,9 @@ import { Alert, Button, Card, Container, Form, Spinner } from "react-bootstrap";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "./ResetPassword.css";
 
-const API = "http://localhost:5134/api";
-
+const API =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
