@@ -13,8 +13,11 @@ import {
 
 import "./HomeHeader.css";
 
-const API_ORIGIN = "http://localhost:5134";
-const API_BASE = `${API_ORIGIN}/api`;
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
+
+const API_ORIGIN = API_BASE.replace(/\/api\/?$/, "");
 
 function getImageUrl(path) {
   if (!path) return "";
