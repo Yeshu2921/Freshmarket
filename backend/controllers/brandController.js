@@ -32,7 +32,10 @@ async function getAllBrands(req, res) {
 }
 
 // POST /api/brands
+// POST /api/brands
 async function createBrand(req, res) {
+  const connection = await db.getConnection();
+
   try {
     const brandName =
       typeof req.body.brand_name === "string"
@@ -58,28 +61,42 @@ async function createBrand(req, res) {
       });
     }
 
-    const [existing] = await db.execute(
+    await connection.beginTransaction();
+
+    const [existing] = await connection.execute(
       "SELECT id FROM brands WHERE brand_name = ? LIMIT 1",
       [brandName]
     );
 
     if (existing.length > 0) {
+      await connection.rollback();
+
       return res.status(409).json({
         success: false,
         message: "This brand already exists.",
       });
     }
 
-    const [result] = await db.execute(
-      `INSERT INTO brands (brand_name, description)
-       VALUES (?, ?)`,
-      [brandName, description]
+    // Generate a new ID using the shared ID generator.
+    const [sequenceResult] = await connection.execute(
+      "INSERT INTO user_id_generator () VALUES ()"
     );
 
-    const [rows] = await db.execute(
-      "SELECT * FROM brands WHERE id = ?",
-      [result.insertId]
+    const brandId = Number(sequenceResult.insertId);
+
+    // Insert the brand with its generated ID.
+    await connection.execute(
+      `INSERT INTO brands (id, brand_name, description)
+       VALUES (?, ?, ?)`,
+      [brandId, brandName, description]
     );
+
+    const [rows] = await connection.execute(
+      "SELECT * FROM brands WHERE id = ?",
+      [brandId]
+    );
+
+    await connection.commit();
 
     return res.status(201).json({
       success: true,
@@ -87,7 +104,9 @@ async function createBrand(req, res) {
       data: rows[0],
     });
   } catch (error) {
-    console.error("Create brand error:", error.message);
+    await connection.rollback();
+
+    console.error("Create brand error:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
       return res.status(409).json({
@@ -100,9 +119,10 @@ async function createBrand(req, res) {
       success: false,
       message: "Failed to create brand.",
     });
+  } finally {
+    connection.release();
   }
 }
-
 // PUT /api/brands/:id
 async function updateBrand(req, res) {
   try {
