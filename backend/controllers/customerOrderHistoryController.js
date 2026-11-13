@@ -77,9 +77,8 @@ const getCustomerOrderHistory = async (req, res) => {
       .map(() => "?")
       .join(",");
 
-    // 5. Retrieve orders belonging to ALL matching profiles.
-    // Use a derived table for the latest payment per order.
-    // This approach is compatible with TiDB.
+    // 5. Retrieve orders, latest payment, and latest review.
+    // Derived tables are used for TiDB compatibility.
 
     const [orders] = await db.query(
       `
@@ -96,7 +95,12 @@ const getCustomerOrderHistory = async (req, res) => {
 
         p.payment_status,
         p.rejection_reason AS payment_rejection_reason,
-        p.transaction_reference
+        p.transaction_reference,
+
+        CASE
+          WHEN r.action = 'Rejected' THEN r.reason
+          ELSE NULL
+        END AS order_rejection_reason
 
       FROM customer_orders o
 
@@ -111,6 +115,18 @@ const getCustomerOrderHistory = async (req, res) => {
 
       LEFT JOIN customer_payments p
         ON p.id = latest_payment.latest_payment_id
+
+      LEFT JOIN (
+        SELECT
+          cr.order_id,
+          MAX(cr.id) AS latest_review_id
+        FROM customer_order_reviews cr
+        GROUP BY cr.order_id
+      ) latest_review
+        ON latest_review.order_id = o.id
+
+      LEFT JOIN customer_order_reviews r
+        ON r.id = latest_review.latest_review_id
 
       WHERE o.customer_id IN (${customerPlaceholders})
 
