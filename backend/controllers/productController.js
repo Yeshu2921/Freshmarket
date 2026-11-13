@@ -2,6 +2,18 @@
 const db = require("../db");
 const fs = require("fs");
 const path = require("path");
+// Generate unique product IDs for TiDB
+async function generateProductId(connection) {
+  const [result] = await connection.execute(
+    "INSERT INTO product_id_generator () VALUES ()"
+  );
+
+  if (!result.insertId) {
+    throw new Error("Unable to generate product ID.");
+  }
+
+  return result.insertId;
+}
 
 const uploadDirectory = path.join(
   __dirname,
