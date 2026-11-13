@@ -1,34 +1,40 @@
 
 /* =========================================
    FreshMart - Worker Layout
-   File: src/layout/WorkerLayout.css
+   Fixed Header Spacing + Responsive Layout
 ========================================= */
 
 .worker-layout {
   --worker-sidebar-width: 260px;
   --worker-sidebar-collapsed-width: 80px;
+  --worker-header-height: 76px;
 
   display: flex;
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
+
   background: #f5f7f6;
   color: #24352e;
+
   overflow-x: clip;
   box-sizing: border-box;
 }
 
-/* Main area beside the sidebar */
+/* =========================================
+   MAIN CONTENT AREA
+========================================= */
+
 .worker-layout-main {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
 
-  /* Reserve space for the desktop sidebar */
   width: calc(100% - var(--worker-sidebar-width));
   min-width: 0;
   min-height: 100vh;
   min-height: 100dvh;
+
   margin-left: var(--worker-sidebar-width);
 
   background: #f5f7f6;
@@ -39,41 +45,64 @@
     width 0.25s ease;
 }
 
-/* Collapsed sidebar on desktop */
+/* Collapsed sidebar */
+
 .worker-layout-collapsed .worker-layout-main {
   width: calc(100% - var(--worker-sidebar-collapsed-width));
   margin-left: var(--worker-sidebar-collapsed-width);
 }
 
-/* Header stays in the normal layout flow */
-.worker-layout-main > header,
+/* =========================================
+   FIXED HEADER SPACE
+========================================= */
+
+/* Header remains fixed, but main content reserves its height. */
+
 .worker-layout-main > .fm-header {
-  flex: 0 0 auto;
-  min-width: 0;
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: var(--worker-sidebar-width);
+
+  height: var(--worker-header-height);
+
+  z-index: 1030;
+  box-sizing: border-box;
+
+  transition: left 0.25s ease;
+}
+
+/* Adjust header when desktop sidebar is collapsed */
+
+.worker-layout-collapsed .worker-layout-main > .fm-header {
+  left: var(--worker-sidebar-collapsed-width);
 }
 
 /* =========================================
-   DASHBOARD AND PAGE CONTENT
+   PAGE CONTENT
 ========================================= */
 
 .worker-layout-content {
   position: relative;
+
   flex: 1 0 auto;
 
   width: 100%;
   min-width: 0;
 
-  /* Move content down by 30px */
-  margin: 30px 0 0;
+  /* Important: reserve the fixed header height */
+  margin-top: var(--worker-header-height);
 
-  /* Keep content slightly closer to the left */
-  padding: 20px 24px 24px 18px;
+  /* Page spacing */
+  padding: 28px 24px 24px 18px;
 
   box-sizing: border-box;
+
   overflow-wrap: anywhere;
 }
 
 /* Page headings */
+
 .worker-layout-content h1,
 .worker-layout-content h2,
 .worker-layout-content h3 {
@@ -99,57 +128,86 @@
 }
 
 /* Bootstrap rows */
+
 .worker-layout-content .row {
   min-width: 0;
 }
 
 /* Bootstrap cards */
+
 .worker-layout-content .card {
   min-width: 0;
   max-width: 100%;
 }
 
 /* Responsive tables */
+
 .worker-layout-content .table-responsive {
   max-width: 100%;
   overflow-x: auto;
 }
 
 /* Responsive images */
+
 .worker-layout-content img {
   max-width: 100%;
   height: auto;
 }
 
-/* Footer stays below the page content */
+/* Footer */
+
 .worker-layout-main > footer {
   flex: 0 0 auto;
   width: 100%;
 }
 
 /* =========================================
-   TABLET AND MOBILE
+   TABLET
 ========================================= */
 
 @media (max-width: 991.98px) {
-  /* Use full width when the sidebar is an overlay */
   .worker-layout-main,
   .worker-layout-collapsed .worker-layout-main {
     width: 100%;
     margin-left: 0;
   }
 
+  .worker-layout-main > .fm-header,
+  .worker-layout-collapsed .worker-layout-main > .fm-header {
+    left: 0;
+  }
+
   .worker-layout-content {
-    margin-top: 20px;
-    padding: 18px 18px 22px;
+    margin-top: 76px;
+    padding: 24px 18px 22px;
   }
 }
 
-/* Small mobile screens */
-@media (max-width: 575.98px) {
+/* =========================================
+   MOBILE
+========================================= */
+
+@media (max-width: 767.98px) {
+  .worker-layout-main > .fm-header {
+    height: 70px;
+  }
+
   .worker-layout-content {
-    margin-top: 16px;
-    padding: 14px 12px 18px;
+    margin-top: 70px;
+    padding: 20px 14px 20px;
+  }
+}
+
+/* Small phones */
+
+@media (max-width: 480px) {
+  .worker-layout-main > .fm-header {
+    height: 66px;
+  }
+
+  .worker-layout-content {
+    margin-top: 66px;
+    padding: 18px 12px 18px;
   }
 
   .worker-layout-content h1 {
@@ -162,8 +220,10 @@
 }
 
 /* Accessibility */
+
 @media (prefers-reduced-motion: reduce) {
-  .worker-layout-main {
+  .worker-layout-main,
+  .worker-layout-main > .fm-header {
     transition: none;
   }
 }
