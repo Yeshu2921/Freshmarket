@@ -1128,3 +1128,25 @@
     flex-direction: column;
   }
 }
+/* =========================================
+   USER PROFILE PHOTO
+========================================= */
+
+.um-avatar {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.um-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
