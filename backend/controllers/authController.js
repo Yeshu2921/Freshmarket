@@ -76,6 +76,23 @@ async function findUserById(userId) {
 }
 
 // ======================================================
+// PASSWORD RESET TOKEN ID GENERATOR
+// TiDB requires an explicit ID in password_reset_tokens.
+// ======================================================
+
+async function generatePasswordResetTokenId() {
+  const [result] = await db.execute(
+    "INSERT INTO password_reset_token_id_generator () VALUES ()"
+  );
+
+  if (!result.insertId) {
+    throw new Error("Unable to generate password reset token ID.");
+  }
+
+  return result.insertId;
+}
+
+// ======================================================
 // PASSWORD VALIDATION
 // ======================================================
 
@@ -471,7 +488,6 @@ async function uploadMyProfilePhoto(req, res) {
 
     const newPhotoPath = `/uploads/profiles/${req.file.filename}`;
 
-    // Save the new photo path before deleting the old photo.
     await db.execute(
       "UPDATE users SET profile_image = ? WHERE id = ?",
       [newPhotoPath, req.user.id]
@@ -673,7 +689,7 @@ async function forgotPassword(req, res) {
       Date.now() + PASSWORD_RESET_EXPIRY_MINUTES * 60 * 1000
     );
 
-    // Invalidate previously issued unused tokens for this user.
+    // Invalidate previous unused reset tokens.
     await db.execute(
       `UPDATE password_reset_tokens
        SET used_at = NOW()
@@ -681,11 +697,15 @@ async function forgotPassword(req, res) {
       [user.id]
     );
 
+    // Generate explicit TiDB ID.
+    const resetTokenId = await generatePasswordResetTokenId();
+
+    // Insert reset token with its generated ID.
     await db.execute(
       `INSERT INTO password_reset_tokens
-         (user_id, token_hash, expires_at)
-       VALUES (?, ?, ?)`,
-      [user.id, tokenHash, expiresAt]
+         (id, user_id, token_hash, expires_at)
+       VALUES (?, ?, ?, ?)`,
+      [resetTokenId, user.id, tokenHash, expiresAt]
     );
 
     const transporter = nodemailer.createTransport({
@@ -737,7 +757,7 @@ async function forgotPassword(req, res) {
         `,
       });
     } catch (emailError) {
-      // Invalidate the token if delivery fails.
+      // Invalidate the token if email delivery fails.
       await db.execute(
         `UPDATE password_reset_tokens
          SET used_at = NOW()
@@ -817,7 +837,6 @@ async function resetPassword(req, res) {
       .update(token)
       .digest("hex");
 
-    // A connection is required for a transaction and row lock.
     connection = await db.getConnection();
 
     await connection.beginTransaction();
