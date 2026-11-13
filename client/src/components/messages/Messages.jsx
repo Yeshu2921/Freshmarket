@@ -52,7 +52,16 @@ function getProfileImage(imagePath) {
   return `${API_ORIGIN}/${image.replace(/^\/+/, "")}`;
 }
 
-// Remove deleted and temporary placeholder messages.
+// Only these message types can contain attachments.
+function hasAttachment(message) {
+  return (
+    ["image", "audio", "video"].includes(message.message_type) &&
+    Boolean(message.attachment_url) &&
+    !message.deleted_for_everyone_at
+  );
+}
+
+// Remove deleted and unfinished placeholder messages.
 function cleanMessages(messages) {
   return (messages || []).filter((message) => {
     if (message.deleted_for_everyone_at) {
@@ -72,7 +81,7 @@ function cleanMessages(messages) {
 
     if (
       text === "loading attachment..." &&
-      !message.attachment_url
+      !hasAttachment(message)
     ) {
       return false;
     }
@@ -99,6 +108,7 @@ function Messages({ currentUser }) {
 
   const attachmentUrlsRef = useRef({});
   const conversationIdRef = useRef(null);
+
   const currentUserId = Number(currentUser?.id);
 
   // ------------------------------------------
@@ -158,7 +168,7 @@ function Messages({ currentUser }) {
 
   const loadConversationMessages = useCallback(
     async (id) => {
-      if (!id) return;
+      if (!id) return [];
 
       try {
         const result = await getMessages(id);
@@ -286,13 +296,11 @@ function Messages({ currentUser }) {
     let active = true;
 
     async function loadFiles() {
+      // Only real image, audio, and video messages
+      // are allowed to request an attachment.
       const validMessageIds = new Set(
         messages
-          .filter(
-            (message) =>
-              message.attachment_url &&
-              !message.deleted_for_everyone_at
-          )
+          .filter(hasAttachment)
           .map((message) => String(message.id))
       );
 
@@ -319,12 +327,12 @@ function Messages({ currentUser }) {
         return updated;
       });
 
+      // Download only valid attachments.
       for (const message of messages) {
         const messageId = String(message.id);
 
         if (
-          !message.attachment_url ||
-          message.deleted_for_everyone_at ||
+          !hasAttachment(message) ||
           attachmentUrlsRef.current[messageId]
         ) {
           continue;
@@ -334,6 +342,12 @@ function Messages({ currentUser }) {
           const url = await loadAttachment(message.id);
 
           if (!active) {
+            URL.revokeObjectURL(url);
+            continue;
+          }
+
+          // Prevent duplicate URL creation.
+          if (attachmentUrlsRef.current[messageId]) {
             URL.revokeObjectURL(url);
             continue;
           }
