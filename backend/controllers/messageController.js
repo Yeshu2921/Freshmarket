@@ -23,7 +23,6 @@ const ID_GENERATORS = {
   deletions: "message_deletion_id_generator",
 };
 
-// Only the predefined generator table names are accepted.
 async function generateId(connection, generatorType) {
   const generatorTable = ID_GENERATORS[generatorType];
 
@@ -93,6 +92,10 @@ async function emitToConversation(conversationId, event, data) {
   });
 }
 
+// =============================================
+// GET FORMATTED MESSAGE
+// =============================================
+
 async function getFormattedMessage(messageId, currentUserId) {
   const [rows] = await db.execute(
     `
@@ -107,7 +110,11 @@ async function getFormattedMessage(messageId, currentUserId) {
 
       CASE
         WHEN m.deleted_for_everyone_at IS NOT NULL
-          THEN 'This message was deleted'
+          THEN NULL
+        WHEN LOWER(TRIM(COALESCE(m.message_text, '')))
+             = 'loading attachment...'
+             AND m.attachment_path IS NOT NULL
+          THEN NULL
         ELSE m.message_text
       END AS message_text,
 
@@ -125,6 +132,7 @@ async function getFormattedMessage(messageId, currentUserId) {
       END AS is_mine
 
     FROM messages m
+
     INNER JOIN users sender
       ON sender.id = m.sender_id
 
@@ -149,9 +157,11 @@ async function getFormattedMessage(messageId, currentUserId) {
   delete formatted.attachment_path;
 
   if (message.deleted_for_everyone_at) {
+    formatted.message_text = null;
     formatted.attachment_name = null;
     formatted.attachment_mime = null;
     formatted.attachment_size = null;
+    formatted.attachment_url = null;
   }
 
   return formatted;
@@ -176,41 +186,42 @@ async function getContacts(req, res) {
         u.profile_image,
         c.id AS conversation_id,
 
-       
-(
-  SELECT
-    CASE
-      WHEN m.message_type <> 'text'
-        THEN CONCAT(
-          UPPER(LEFT(m.message_type, 1)),
-          SUBSTRING(m.message_type, 2)
-        )
-      ELSE COALESCE(m.message_text, '')
-    END
+        (
+          SELECT
+            CASE
+              WHEN m.message_type <> 'text'
+                THEN CONCAT(
+                  UPPER(LEFT(m.message_type, 1)),
+                  SUBSTRING(m.message_type, 2)
+                )
+              ELSE COALESCE(m.message_text, '')
+            END
 
-  FROM messages m
+          FROM messages m
 
-  WHERE m.conversation_id = c.id
+          WHERE m.conversation_id = c.id
 
-    -- Hide messages deleted for everyone.
-    AND m.deleted_for_everyone_at IS NULL
+            -- Hide messages deleted for everyone.
+            AND m.deleted_for_everyone_at IS NULL
 
-    -- Ignore attachment loading placeholders.
-    AND LOWER(TRIM(COALESCE(m.message_text, '')))
-        <> 'loading attachment...'
+            -- Ignore unfinished attachment placeholders.
+            AND NOT (
+              LOWER(TRIM(COALESCE(m.message_text, '')))
+                = 'loading attachment...'
+              AND m.attachment_path IS NULL
+            )
 
-    -- Hide messages deleted by the current user.
-    AND NOT EXISTS (
-      SELECT 1
-      FROM message_deletions md
-      WHERE md.message_id = m.id
-        AND md.user_id = ?
-    )
+            -- Hide messages deleted by the current user.
+            AND NOT EXISTS (
+              SELECT 1
+              FROM message_deletions md
+              WHERE md.message_id = m.id
+                AND md.user_id = ?
+            )
 
-  ORDER BY m.id DESC
-  LIMIT 1
-) AS last_message,
-
+          ORDER BY m.id DESC
+          LIMIT 1
+        ) AS last_message,
 
         (
           SELECT COUNT(*)
@@ -380,7 +391,6 @@ async function openConversation(req, res) {
     if (existing.length) {
       conversationId = existing[0].conversation_id;
     } else {
-      // Generate a unique conversation ID.
       const generatedId = await generateId(
         connection,
         "conversations"
@@ -388,7 +398,6 @@ async function openConversation(req, res) {
 
       conversationId = generatedId;
 
-      // Insert conversation using generated ID.
       await connection.execute(
         `
         INSERT INTO conversations (id)
@@ -397,7 +406,6 @@ async function openConversation(req, res) {
         [conversationId]
       );
 
-      // Add both conversation participants.
       await connection.execute(
         `
         INSERT INTO conversation_participants
@@ -513,29 +521,16 @@ async function getMessages(req, res) {
         m.message_type,
 
         CASE
-          WHEN m.deleted_for_everyone_at IS NOT NULL
-            THEN 'This message was deleted'
+          WHEN LOWER(TRIM(COALESCE(m.message_text, '')))
+               = 'loading attachment...'
+               AND m.attachment_path IS NOT NULL
+            THEN NULL
           ELSE m.message_text
         END AS message_text,
 
-        CASE
-          WHEN m.deleted_for_everyone_at IS NOT NULL
-            THEN NULL
-          ELSE m.attachment_name
-        END AS attachment_name,
-
-        CASE
-          WHEN m.deleted_for_everyone_at IS NOT NULL
-            THEN NULL
-          ELSE m.attachment_mime
-        END AS attachment_mime,
-
-        CASE
-          WHEN m.deleted_for_everyone_at IS NOT NULL
-            THEN NULL
-          ELSE m.attachment_size
-        END AS attachment_size,
-
+        m.attachment_name,
+        m.attachment_mime,
+        m.attachment_size,
         m.edited_at,
         m.deleted_for_everyone_at,
         m.created_at,
@@ -553,6 +548,17 @@ async function getMessages(req, res) {
 
       WHERE m.conversation_id = ?
 
+        -- Never return messages deleted for everyone.
+        AND m.deleted_for_everyone_at IS NULL
+
+        -- Hide unfinished loading placeholders without an attachment.
+        AND NOT (
+          LOWER(TRIM(COALESCE(m.message_text, '')))
+            = 'loading attachment...'
+          AND m.attachment_path IS NULL
+        )
+
+        -- Respect messages deleted only for this user.
         AND NOT EXISTS (
           SELECT 1
           FROM message_deletions md
