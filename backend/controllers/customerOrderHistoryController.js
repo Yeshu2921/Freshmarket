@@ -43,8 +43,8 @@ const getCustomerOrderHistory = async (req, res) => {
       });
     }
 
-    // 3. Find the profile whose PIN matches
-    let matchedCustomer = null;
+    // 3. Verify PIN against ALL matching profiles
+    const matchedCustomers = [];
 
     for (const customer of customers) {
       if (!customer.pin_hash) {
@@ -57,22 +57,29 @@ const getCustomerOrderHistory = async (req, res) => {
       );
 
       if (validPin) {
-        matchedCustomer = customer;
-        break;
+        matchedCustomers.push(customer);
       }
     }
 
-    if (!matchedCustomer) {
+    if (matchedCustomers.length === 0) {
       return res.status(401).json({
         success: false,
         message: "Invalid phone number or PIN.",
       });
     }
 
-    // 4. Retrieve orders and their latest payment.
-    // TiDB-compatible approach:
-    // Find the maximum payment ID per order in a derived table.
-    // No correlated subquery inside the JOIN condition.
+    // 4. Collect all matching customer profile IDs
+    const customerIds = matchedCustomers.map(
+      (customer) => customer.id
+    );
+
+    const customerPlaceholders = customerIds
+      .map(() => "?")
+      .join(",");
+
+    // 5. Retrieve orders belonging to ALL matching profiles.
+    // Use a derived table for the latest payment per order.
+    // This approach is compatible with TiDB.
 
     const [orders] = await db.query(
       `
@@ -105,20 +112,22 @@ const getCustomerOrderHistory = async (req, res) => {
       LEFT JOIN customer_payments p
         ON p.id = latest_payment.latest_payment_id
 
-      WHERE o.customer_id = ?
+      WHERE o.customer_id IN (${customerPlaceholders})
 
       ORDER BY o.created_at DESC, o.id DESC
       `,
-      [matchedCustomer.id]
+      customerIds
     );
 
-    // 5. Retrieve products for all orders
+    // 6. Retrieve products for all orders
     const orderIds = orders.map((order) => order.id);
 
     let items = [];
 
     if (orderIds.length > 0) {
-      const placeholders = orderIds.map(() => "?").join(",");
+      const placeholders = orderIds
+        .map(() => "?")
+        .join(",");
 
       const [orderItems] = await db.query(
         `
@@ -141,7 +150,7 @@ const getCustomerOrderHistory = async (req, res) => {
       items = orderItems;
     }
 
-    // 6. Attach products to their corresponding orders
+    // 7. Attach products to their corresponding orders
     const formattedOrders = orders.map((order) => ({
       ...order,
       items: items.filter(
@@ -149,14 +158,16 @@ const getCustomerOrderHistory = async (req, res) => {
       ),
     }));
 
-    // 7. Return customer and order history
+    // 8. Return customer and complete order history
+    const primaryCustomer = matchedCustomers[0];
+
     return res.status(200).json({
       success: true,
 
       customer: {
-        id: matchedCustomer.id,
-        full_name: matchedCustomer.full_name,
-        phone: matchedCustomer.phone,
+        id: primaryCustomer.id,
+        full_name: primaryCustomer.full_name,
+        phone: primaryCustomer.phone,
       },
 
       total_orders: formattedOrders.length,
