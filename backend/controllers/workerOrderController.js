@@ -4,10 +4,28 @@ const fs = require("fs");
 const path = require("path");
 
 // ======================================================
+// CUSTOMER ORDER REVIEW ID GENERATOR
+//
+// TiDB requires an explicit ID because
+// customer_order_reviews.id is not AUTO_INCREMENT.
+//
+// Generator table:
+// customer_order_review_id_generator
+// ======================================================
+
+async function generateCustomerOrderReviewId(connection) {
+  const [result] = await connection.query(
+    "INSERT INTO customer_order_review_id_generator () VALUES ()"
+  );
+
+  return result.insertId;
+}
+
+// ======================================================
 // PRIVATE PAYMENT RECEIPT FILE HELPERS
 //
 // Allowed folder:
-// backend/private_uploads/customer/payment_receipts
+// backend/private_uploads/customer/payment-receipts
 //
 // IMPORTANT:
 // Never expose private_uploads using express.static().
@@ -330,7 +348,6 @@ const getWorkerOrderDetails = async (req, res) => {
 // GET /api/worker-orders/:orderId/receipt
 //
 // Securely display a customer's payment receipt.
-// Requires authentication and owner/worker role.
 // ======================================================
 
 const getWorkerOrderReceipt = async (req, res) => {
@@ -440,7 +457,7 @@ const getWorkerOrderReceipt = async (req, res) => {
 // 3. Deduct stock.
 // 4. Confirm order.
 // 5. Approve payment.
-// 6. Record worker review.
+// 6. Record worker review with generated ID.
 // ======================================================
 
 const approveOrder = async (req, res) => {
@@ -722,12 +739,15 @@ const approveOrder = async (req, res) => {
       throw new Error("Payment approval could not be saved.");
     }
 
-    // Record worker approval.
+    // Generate review ID and record worker approval.
+    const reviewId =
+      await generateCustomerOrderReviewId(connection);
+
     await connection.query(
       `INSERT INTO customer_order_reviews
-         (order_id, worker_id, action, reason, created_at)
-       VALUES (?, ?, 'Approved', NULL, CURRENT_TIMESTAMP)`,
-      [orderId, workerId]
+         (id, order_id, worker_id, action, reason, created_at)
+       VALUES (?, ?, ?, 'Approved', NULL, CURRENT_TIMESTAMP)`,
+      [reviewId, orderId, workerId]
     );
 
     await connection.commit();
@@ -854,11 +874,15 @@ const rejectOrder = async (req, res) => {
       [orderId]
     );
 
+    // Generate review ID and record worker rejection.
+    const reviewId =
+      await generateCustomerOrderReviewId(connection);
+
     await connection.query(
       `INSERT INTO customer_order_reviews
-         (order_id, worker_id, action, reason, created_at)
-       VALUES (?, ?, 'Rejected', ?, CURRENT_TIMESTAMP)`,
-      [orderId, workerId, reason]
+         (id, order_id, worker_id, action, reason, created_at)
+       VALUES (?, ?, ?, 'Rejected', ?, CURRENT_TIMESTAMP)`,
+      [reviewId, orderId, workerId, reason]
     );
 
     await connection.commit();
