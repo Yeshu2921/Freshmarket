@@ -126,7 +126,7 @@ function About() {
 
                 <div className="fm-about-hero-actions">
                   <Link
-                    to="/all-products"
+                    to="/market"
                     className="btn fm-about-primary-btn"
                   >
                     Explore Products
@@ -194,7 +194,7 @@ function About() {
                 communication.
               </p>
 
-              <Link to="/all-products" className="fm-text-link">
+              <Link to="/market" className="fm-text-link">
                 Start Shopping
                 <i className="bi bi-arrow-up-right ms-2" />
               </Link>
