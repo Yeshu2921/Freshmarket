@@ -82,16 +82,23 @@ function WorkerOnlineOrders() {
   const [showRejectBox, setShowRejectBox] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
-  // Payment confirmation states
+  // Delete rejected order loading state.
+  const [deleteLoadingId, setDeleteLoadingId] = useState(null);
+
+  // Payment confirmation states.
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
-  // Secure receipt preview states
+  // Secure receipt preview states.
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState("");
   const [receiptPreviewLoading, setReceiptPreviewLoading] =
     useState(false);
-  const [receiptPreviewError, setReceiptPreviewError] = useState("");
+  const [receiptPreviewError, setReceiptPreviewError] =
+    useState("");
 
-  // Load orders
+  // ======================================================
+  // LOAD ORDERS
+  // ======================================================
+
   async function loadOrders(isRefresh = false) {
     try {
       if (isRefresh) {
@@ -120,7 +127,7 @@ function WorkerOnlineOrders() {
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(data.message || "Failed to load orders.");
       }
 
@@ -138,7 +145,10 @@ function WorkerOnlineOrders() {
     loadOrders();
   }, []);
 
-  // Clean up temporary receipt image URL.
+  // ======================================================
+  // CLEAN UP TEMPORARY RECEIPT IMAGE URL
+  // ======================================================
+
   useEffect(() => {
     return () => {
       if (receiptPreviewUrl) {
@@ -147,7 +157,10 @@ function WorkerOnlineOrders() {
     };
   }, [receiptPreviewUrl]);
 
-  // Load order details and secure receipt image.
+  // ======================================================
+  // LOAD ORDER DETAILS AND SECURE RECEIPT IMAGE
+  // ======================================================
+
   async function openOrderDetails(orderId) {
     try {
       setSelectedOrder(null);
@@ -180,7 +193,7 @@ function WorkerOnlineOrders() {
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(
           data.message || "Failed to load order details."
         );
@@ -253,7 +266,10 @@ function WorkerOnlineOrders() {
     }
   }
 
-  // Approve order and payment together.
+  // ======================================================
+  // APPROVE ORDER AND PAYMENT TOGETHER
+  // ======================================================
+
   async function approveSelectedOrder() {
     if (!selectedOrder) return;
 
@@ -271,7 +287,6 @@ function WorkerOnlineOrders() {
 
     const cashOrder = isCashOnDelivery(selectedOrder);
 
-    // Electronic payment requires an uploaded receipt.
     if (!cashOrder && !selectedOrder.has_receipt) {
       setError(
         "This electronic payment has no uploaded receipt."
@@ -294,6 +309,10 @@ function WorkerOnlineOrders() {
 
       const token = getToken();
 
+      if (!token) {
+        throw new Error("Your login session was not found.");
+      }
+
       const response = await fetch(
         `${API_BASE}/worker-orders/${selectedOrder.id}/approve`,
         {
@@ -310,7 +329,7 @@ function WorkerOnlineOrders() {
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(
           data.message || "Failed to approve order and payment."
         );
@@ -339,7 +358,10 @@ function WorkerOnlineOrders() {
     }
   }
 
-  // Reject order
+  // ======================================================
+  // REJECT ORDER
+  // ======================================================
+
   async function rejectSelectedOrder() {
     if (!selectedOrder) return;
 
@@ -366,6 +388,10 @@ function WorkerOnlineOrders() {
 
       const token = getToken();
 
+      if (!token) {
+        throw new Error("Your login session was not found.");
+      }
+
       const response = await fetch(
         `${API_BASE}/worker-orders/${selectedOrder.id}/reject`,
         {
@@ -380,7 +406,7 @@ function WorkerOnlineOrders() {
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(
           data.message || "Failed to reject order."
         );
@@ -408,7 +434,90 @@ function WorkerOnlineOrders() {
     }
   }
 
-  // Search and filter
+  // ======================================================
+  // DELETE REJECTED ORDER
+  // Only Rejected orders can be permanently deleted.
+  // ======================================================
+
+  async function deleteRejectedOrder(order) {
+    if (order.order_status !== "Rejected") {
+      setError("Only rejected orders can be deleted.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete order ${order.order_number}? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeleteLoadingId(order.id);
+      setError("");
+      setSuccess("");
+
+      const token = getToken();
+
+      if (!token) {
+        throw new Error("Your login session was not found.");
+      }
+
+      const response = await fetch(
+        `${API_BASE}/worker-orders/${order.id}/rejected`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message || "Failed to delete rejected order."
+        );
+      }
+
+      // Remove deleted order from the list.
+      setOrders((previousOrders) =>
+        previousOrders.filter(
+          (item) => Number(item.id) !== Number(order.id)
+        )
+      );
+
+      // Close modal if the deleted order is currently open.
+      if (
+        selectedOrder &&
+        Number(selectedOrder.id) === Number(order.id)
+      ) {
+        setSelectedOrder(null);
+        setShowRejectBox(false);
+        setRejectReason("");
+        setPaymentConfirmed(false);
+        setReceiptPreviewUrl("");
+        setReceiptPreviewError("");
+      }
+
+      setSuccess(
+        data.message || "Rejected order deleted successfully."
+      );
+    } catch (err) {
+      console.error("Delete rejected order error:", err);
+
+      setError(
+        err.message || "Unable to delete rejected order."
+      );
+    } finally {
+      setDeleteLoadingId(null);
+    }
+  }
+
+  // ======================================================
+  // SEARCH AND FILTER
+  // ======================================================
+
   const filteredOrders = useMemo(() => {
     const searchText = search.trim().toLowerCase();
 
@@ -441,6 +550,14 @@ function WorkerOnlineOrders() {
     (order) => order.order_status === "Confirmed"
   ).length;
 
+  const rejectedCount = orders.filter(
+    (order) => order.order_status === "Rejected"
+  ).length;
+
+  // ======================================================
+  // CLOSE DETAILS MODAL
+  // ======================================================
+
   function closeDetails() {
     if (actionLoading) return;
 
@@ -451,6 +568,10 @@ function WorkerOnlineOrders() {
     setReceiptPreviewUrl("");
     setReceiptPreviewError("");
   }
+
+  // ======================================================
+  // PAGE UI
+  // ======================================================
 
   return (
     <div className="worker-online-orders">
@@ -482,6 +603,7 @@ function WorkerOnlineOrders() {
         <div className="wo-alert wo-alert-error" role="alert">
           <i className="bi bi-exclamation-circle"></i>
           <span>{error}</span>
+
           <button
             type="button"
             onClick={() => setError("")}
@@ -496,6 +618,7 @@ function WorkerOnlineOrders() {
         <div className="wo-alert wo-alert-success" role="status">
           <i className="bi bi-check-circle"></i>
           <span>{success}</span>
+
           <button
             type="button"
             onClick={() => setSuccess("")}
@@ -512,6 +635,7 @@ function WorkerOnlineOrders() {
           <div className="wo-summary-icon wo-icon-total">
             <i className="bi bi-receipt"></i>
           </div>
+
           <div>
             <span>Total Recent Orders</span>
             <h3>{orders.length}</h3>
@@ -522,6 +646,7 @@ function WorkerOnlineOrders() {
           <div className="wo-summary-icon wo-icon-pending">
             <i className="bi bi-hourglass-split"></i>
           </div>
+
           <div>
             <span>Pending Orders</span>
             <h3>{pendingCount}</h3>
@@ -532,9 +657,21 @@ function WorkerOnlineOrders() {
           <div className="wo-summary-icon wo-icon-confirmed">
             <i className="bi bi-check2-circle"></i>
           </div>
+
           <div>
             <span>Confirmed Orders</span>
             <h3>{confirmedCount}</h3>
+          </div>
+        </div>
+
+        <div className="wo-summary-card">
+          <div className="wo-summary-icon wo-icon-pending">
+            <i className="bi bi-x-circle"></i>
+          </div>
+
+          <div>
+            <span>Rejected Orders</span>
+            <h3>{rejectedCount}</h3>
           </div>
         </div>
       </div>
@@ -543,6 +680,7 @@ function WorkerOnlineOrders() {
       <div className="wo-toolbar">
         <div className="wo-search-box">
           <i className="bi bi-search"></i>
+
           <input
             type="text"
             placeholder="Search order number, customer or phone..."
@@ -562,26 +700,32 @@ function WorkerOnlineOrders() {
         </div>
 
         <div className="wo-filter-buttons">
-          {["All", "Pending", "Confirmed"].map((filter) => (
-            <button
-              type="button"
-              key={filter}
-              className={
-                activeFilter === filter ? "active" : ""
-              }
-              onClick={() => setActiveFilter(filter)}
-            >
-              {filter}
+          {["All", "Pending", "Confirmed", "Rejected"].map(
+            (filter) => (
+              <button
+                type="button"
+                key={filter}
+                className={
+                  activeFilter === filter ? "active" : ""
+                }
+                onClick={() => setActiveFilter(filter)}
+              >
+                {filter}
 
-              {filter === "Pending" && (
-                <span>{pendingCount}</span>
-              )}
+                {filter === "Pending" && (
+                  <span>{pendingCount}</span>
+                )}
 
-              {filter === "Confirmed" && (
-                <span>{confirmedCount}</span>
-              )}
-            </button>
-          ))}
+                {filter === "Confirmed" && (
+                  <span>{confirmedCount}</span>
+                )}
+
+                {filter === "Rejected" && (
+                  <span>{rejectedCount}</span>
+                )}
+              </button>
+            )
+          )}
         </div>
       </div>
 
@@ -591,7 +735,7 @@ function WorkerOnlineOrders() {
           <div>
             <h4>Recent Orders</h4>
             <p>
-              Pending orders and recently confirmed orders
+              Pending, confirmed and rejected customer orders
             </p>
           </div>
 
@@ -610,6 +754,7 @@ function WorkerOnlineOrders() {
                 Loading...
               </span>
             </div>
+
             <p>Loading customer orders...</p>
           </div>
         ) : filteredOrders.length === 0 ? (
@@ -617,7 +762,9 @@ function WorkerOnlineOrders() {
             <div className="wo-empty-icon">
               <i className="bi bi-inbox"></i>
             </div>
+
             <h5>No orders found</h5>
+
             <p>
               {search
                 ? "Try another search term."
@@ -643,6 +790,7 @@ function WorkerOnlineOrders() {
                       <strong>
                         {order.customer_name || "Customer"}
                       </strong>
+
                       <span>
                         {order.customer_phone ||
                           "No phone number"}
@@ -699,16 +847,40 @@ function WorkerOnlineOrders() {
                     ) : null}
                   </div>
 
-                  <button
-                    type="button"
-                    className="wo-details-btn"
-                    onClick={() =>
-                      openOrderDetails(order.id)
-                    }
-                  >
-                    View Details
-                    <i className="bi bi-arrow-right"></i>
-                  </button>
+                  {/* View Details + Delete rejected order */}
+                  <div className="wo-order-actions">
+                    <button
+                      type="button"
+                      className="wo-details-btn"
+                      onClick={() =>
+                        openOrderDetails(order.id)
+                      }
+                    >
+                      View Details
+                      <i className="bi bi-arrow-right"></i>
+                    </button>
+
+                    {order.order_status === "Rejected" && (
+                      <button
+                        type="button"
+                        className="wo-delete-icon-btn"
+                        onClick={() =>
+                          deleteRejectedOrder(order)
+                        }
+                        disabled={
+                          deleteLoadingId === order.id
+                        }
+                        title="Permanently delete rejected order"
+                        aria-label={`Delete rejected order ${order.order_number}`}
+                      >
+                        {deleteLoadingId === order.id ? (
+                          <span className="spinner-border spinner-border-sm"></span>
+                        ) : (
+                          <i className="bi bi-trash3"></i>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -716,7 +888,10 @@ function WorkerOnlineOrders() {
         )}
       </div>
 
-      {/* Order details modal */}
+      {/* ==================================================
+          ORDER DETAILS MODAL
+      ================================================== */}
+
       {(selectedOrder || detailsLoading) && (
         <div
           className="wo-modal-backdrop"
@@ -735,6 +910,7 @@ function WorkerOnlineOrders() {
             <div className="wo-modal-header">
               <div>
                 <span>ORDER INFORMATION</span>
+
                 <h3 id="wo-details-title">
                   {selectedOrder
                     ? selectedOrder.order_number
@@ -763,6 +939,7 @@ function WorkerOnlineOrders() {
                     Loading...
                   </span>
                 </div>
+
                 <p>Loading order details...</p>
               </div>
             ) : selectedOrder ? (
@@ -771,6 +948,7 @@ function WorkerOnlineOrders() {
                   {/* Status */}
                   <div className="wo-detail-status-row">
                     <span>Order Status</span>
+
                     <span
                       className={getStatusClass(
                         selectedOrder.order_status
@@ -860,6 +1038,7 @@ function WorkerOnlineOrders() {
                               <strong>
                                 {item.product_name}
                               </strong>
+
                               <span>
                                 {formatMoney(item.unit_price)} ×{" "}
                                 {item.quantity}
@@ -911,8 +1090,10 @@ function WorkerOnlineOrders() {
                     {isCashOnDelivery(selectedOrder) ? (
                       <div className="wo-payment-confirmation wo-cash-payment">
                         <i className="bi bi-cash-coin"></i>
+
                         <div>
                           <strong>Cash on Delivery</strong>
+
                           <p>
                             The customer will pay in cash.
                             Receive and count the full amount
@@ -924,10 +1105,12 @@ function WorkerOnlineOrders() {
                       <div className="wo-receipt-area">
                         <div className="wo-receipt-notice">
                           <i className="bi bi-file-earmark-check"></i>
+
                           <div>
                             <strong>
                               Payment receipt uploaded
                             </strong>
+
                             <p>
                               Verify the receipt and confirm
                               that the payment was actually
@@ -939,6 +1122,7 @@ function WorkerOnlineOrders() {
                         {receiptPreviewLoading && (
                           <div className="wo-receipt-loading">
                             <span className="spinner-border spinner-border-sm"></span>
+
                             <span>
                               Loading payment receipt...
                             </span>
@@ -985,6 +1169,7 @@ function WorkerOnlineOrders() {
                     ) : (
                       <div className="wo-no-receipt">
                         <i className="bi bi-exclamation-circle"></i>
+
                         No payment receipt was uploaded.
                         Electronic payment approval is unavailable.
                       </div>
@@ -1031,6 +1216,7 @@ function WorkerOnlineOrders() {
                   <div className="wo-total-section">
                     <div>
                       <span>Subtotal</span>
+
                       <strong>
                         {formatMoney(selectedOrder.subtotal)}
                       </strong>
@@ -1038,6 +1224,7 @@ function WorkerOnlineOrders() {
 
                     <div>
                       <span>Delivery Fee</span>
+
                       <strong>
                         {formatMoney(
                           selectedOrder.delivery_fee
@@ -1047,6 +1234,7 @@ function WorkerOnlineOrders() {
 
                     <div className="wo-grand-total">
                       <span>Grand Total</span>
+
                       <strong>
                         {formatMoney(selectedOrder.grand_total)}
                       </strong>
@@ -1072,6 +1260,7 @@ function WorkerOnlineOrders() {
                                 <strong>
                                   {review.action}
                                 </strong>
+
                                 <span>
                                   Handled by:{" "}
                                   {review.handled_by || "Worker"}
