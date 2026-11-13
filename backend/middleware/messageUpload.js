@@ -19,6 +19,7 @@ const uploadDirectories = {
   image: path.join(messageUploadRoot, "images"),
   audio: path.join(messageUploadRoot, "audio"),
   video: path.join(messageUploadRoot, "videos"),
+  file: path.join(messageUploadRoot, "documents"),
 };
 
 // Create directories automatically.
@@ -53,6 +54,17 @@ const allowedTypes = {
     "video/webm": [".webm"],
     "video/quicktime": [".mov"],
   },
+
+  file: {
+    "application/pdf": [".pdf"],
+    "application/msword": [".doc"],
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+    "application/vnd.ms-excel": [".xls"],
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+    "text/plain": [".txt"],
+    "text/csv": [".csv"],
+    "application/zip": [".zip"],
+  },
 };
 
 // =============================================
@@ -83,7 +95,9 @@ const storage = multer.diskStorage({
     const category = getFileCategory(file);
 
     if (!category) {
-      return callback(new Error("Unsupported attachment file type."));
+      const error = new Error("Unsupported attachment file type.");
+      error.status = 400;
+      return callback(error);
     }
 
     callback(null, uploadDirectories[category]);
@@ -91,7 +105,6 @@ const storage = multer.diskStorage({
 
   filename: (req, file, callback) => {
     const extension = path.extname(file.originalname).toLowerCase();
-
     const filename = `${crypto.randomUUID()}${extension}`;
 
     callback(null, filename);
@@ -107,7 +120,7 @@ function fileFilter(req, file, callback) {
 
   if (!category) {
     const error = new Error(
-      "Only supported image, audio, and video files are allowed."
+      "Only supported image, audio, video and document files are allowed."
     );
 
     error.status = 400;
@@ -141,6 +154,7 @@ const MAX_ATTACHMENT_SIZES = {
   image: 10 * 1024 * 1024,
   audio: 10 * 1024 * 1024,
   video: 50 * 1024 * 1024,
+  file: 20 * 1024 * 1024,
 };
 
 async function validateMessageAttachmentSize(req, res, next) {
@@ -165,7 +179,10 @@ async function validateMessageAttachmentSize(req, res, next) {
 
     next();
   } catch (error) {
-    console.error("Message upload validation error:", error.message);
+    console.error(
+      "Message upload validation error:",
+      error.message
+    );
 
     next(error);
   }
