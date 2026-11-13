@@ -3,6 +3,18 @@ const db = require("../db");
 const { emitToUser } = require("../socket/socketServer");
 
 // =============================================
+// GENERATE NOTIFICATION ID (TiDB CLOUD)
+// =============================================
+
+async function generateNotificationId() {
+  const [result] = await db.execute(
+    "INSERT INTO notification_id_generator () VALUES ()"
+  );
+
+  return result.insertId;
+}
+
+// =============================================
 // CREATE AND SAVE A NOTIFICATION
 // =============================================
 
@@ -23,18 +35,24 @@ async function createNotification({
     throw new Error("Invalid notification type.");
   }
 
-  const [result] = await db.execute(
+  // Generate a unique ID using the separate generator table.
+  const notificationId = await generateNotificationId();
+
+  // Save notification with the generated ID.
+  await db.execute(
     `
     INSERT INTO notifications (
+      id,
       user_id,
       notification_type,
       title,
       message,
       reference_id
     )
-    VALUES (?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?)
     `,
     [
+      notificationId,
       userId,
       type,
       title,
@@ -44,7 +62,7 @@ async function createNotification({
   );
 
   const notification = {
-    id: result.insertId,
+    id: notificationId,
     user_id: userId,
     notification_type: type,
     title,
@@ -55,7 +73,15 @@ async function createNotification({
   };
 
   // Deliver immediately if the user is connected.
-  emitToUser(userId, "notification:new", notification);
+  // Socket errors must not affect the saved notification.
+  try {
+    emitToUser(userId, "notification:new", notification);
+  } catch (socketError) {
+    console.error(
+      "Notification socket delivery error:",
+      socketError.message
+    );
+  }
 
   return notification;
 }
@@ -151,9 +177,16 @@ async function markNotificationRead(req, res) {
 
     const unreadCount = await getUnreadCount(userId);
 
-    emitToUser(userId, "notification:count", {
-      unreadCount,
-    });
+    try {
+      emitToUser(userId, "notification:count", {
+        unreadCount,
+      });
+    } catch (socketError) {
+      console.error(
+        "Notification count socket error:",
+        socketError.message
+      );
+    }
 
     return res.status(200).json({
       success: true,
@@ -189,9 +222,16 @@ async function markAllNotificationsRead(req, res) {
       [userId]
     );
 
-    emitToUser(userId, "notification:count", {
-      unreadCount: 0,
-    });
+    try {
+      emitToUser(userId, "notification:count", {
+        unreadCount: 0,
+      });
+    } catch (socketError) {
+      console.error(
+        "Notification count socket error:",
+        socketError.message
+      );
+    }
 
     return res.status(200).json({
       success: true,
@@ -225,6 +265,10 @@ async function getUnreadCount(userId) {
 
   return Number(rows[0].unread_count);
 }
+
+// =============================================
+// GET NOTIFICATION COUNT
+// =============================================
 
 async function getNotificationCount(req, res) {
   try {
