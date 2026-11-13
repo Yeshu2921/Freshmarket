@@ -3,13 +3,22 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const db = require("../db");
 
+// =============================================
+// CONFIGURATION
+// =============================================
+
 const allowedRoles = ["owner", "worker"];
+
 const allowedSexes = [
   "male",
   "female",
   "other",
   "prefer_not_to_say",
 ];
+
+// =============================================
+// PASSWORD HELPERS
+// =============================================
 
 function strongPassword(password) {
   return (
@@ -44,7 +53,6 @@ function generateStrongPassword() {
     chars.push(pick(all));
   }
 
-  // Securely shuffle the characters.
   for (let i = chars.length - 1; i > 0; i--) {
     const j = crypto.randomInt(0, i + 1);
     [chars[i], chars[j]] = [chars[j], chars[i]];
@@ -52,6 +60,10 @@ function generateStrongPassword() {
 
   return chars.join("");
 }
+
+// =============================================
+// GENERAL HELPERS
+// =============================================
 
 function normalizeSex(value) {
   if (value === "" || value === undefined || value === null) {
@@ -66,6 +78,8 @@ function parseActive(value) {
 }
 
 function publicUser(user) {
+  if (!user) return null;
+
   return {
     id: user.id,
     first_name: user.first_name,
@@ -76,22 +90,54 @@ function publicUser(user) {
     phone: user.phone,
     address: user.address,
     about_me: user.about_me,
-    profile_image: user.profile_image,
+    profile_image: user.profile_image || null,
     role: user.role,
-    is_active: Boolean(user.is_active),
+    is_active: parseActive(user.is_active),
     created_at: user.created_at,
     updated_at: user.updated_at,
   };
 }
 
+function validEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function validId(id) {
+  return Number.isSafeInteger(id) && id > 0;
+}
+
+function rollbackSafely(connection, transactionStarted) {
+  if (!connection || !transactionStarted) {
+    return Promise.resolve();
+  }
+
+  return connection.rollback().catch((error) => {
+    console.error("Transaction rollback error:", error.message);
+  });
+}
+
+// =============================================
+// GET ALL USERS
 // GET /api/users
+// =============================================
+
 async function getUsers(req, res) {
   try {
     const [rows] = await db.execute(
       `SELECT
-         id, first_name, last_name, sex, email,
-         phone, address, about_me, profile_image,
-         role, is_active, created_at, updated_at
+         id,
+         first_name,
+         last_name,
+         sex,
+         email,
+         phone,
+         address,
+         about_me,
+         profile_image,
+         role,
+         is_active,
+         created_at,
+         updated_at
        FROM users
        ORDER BY created_at DESC, id DESC`
     );
@@ -102,7 +148,7 @@ async function getUsers(req, res) {
       total: rows.length,
     });
   } catch (error) {
-    console.error("Get users error:", error.message);
+    console.error("Get users error:", error);
 
     return res.status(500).json({
       success: false,
@@ -111,19 +157,37 @@ async function getUsers(req, res) {
   }
 }
 
+// =============================================
+// CREATE USER
 // POST /api/users
+//
+// Uses user_id_generator because users.id
+// is not AUTO_INCREMENT.
+// =============================================
+
 async function createUser(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const firstName = String(req.body?.first_name || "").trim();
     const lastName = String(req.body?.last_name || "").trim();
     const email = String(req.body?.email || "").trim().toLowerCase();
-    const phone = String(req.body?.phone || "").trim() || null;
-    const address = String(req.body?.address || "").trim() || null;
-    const aboutMe = String(req.body?.about_me || "").trim() || null;
-    const role = String(req.body?.role || "worker").trim();
+
+    const phone =
+      String(req.body?.phone || "").trim() || null;
+
+    const address =
+      String(req.body?.address || "").trim() || null;
+
+    const aboutMe =
+      String(req.body?.about_me || "").trim() || null;
 
     const sex = normalizeSex(req.body?.sex);
 
+    const role = String(req.body?.role || "worker").trim();
+
+    // Validate required fields.
     if (!firstName || !lastName || !email) {
       return res.status(400).json({
         success: false,
@@ -131,7 +195,7 @@ async function createUser(req, res) {
       });
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!validEmail(email)) {
       return res.status(400).json({
         success: false,
         message: "Please provide a valid email address.",
@@ -145,27 +209,36 @@ async function createUser(req, res) {
       });
     }
 
-    if (!allowedRoles.includes(role)) {
+    // Owners create worker accounts only.
+    if (role !== "worker") {
       return res.status(400).json({
         success: false,
-        message: "Role must be owner or worker.",
+        message: "New accounts can only be created with the worker role.",
       });
     }
 
-    if (firstName.length > 100 || lastName.length > 100 ||
-        email.length > 190 || (phone && phone.length > 30) ||
-        (address && address.length > 255)) {
+    if (
+      firstName.length > 100 ||
+      lastName.length > 100 ||
+      email.length > 190 ||
+      (phone && phone.length > 30) ||
+      (address && address.length > 255)
+    ) {
       return res.status(400).json({
         success: false,
         message: "One or more fields exceed the allowed length.",
       });
     }
 
-    // If no password was supplied, generate a strong temporary one.
+    // Generate a temporary password if not provided.
     let password = req.body?.password;
     let generatedPassword = false;
 
-    if (password === undefined || password === null || password === "") {
+    if (
+      password === undefined ||
+      password === null ||
+      password === ""
+    ) {
       password = generateStrongPassword();
       generatedPassword = true;
     } else if (!strongPassword(password)) {
@@ -178,13 +251,40 @@ async function createUser(req, res) {
 
     const passwordHash = await bcrypt.hash(password, 12);
 
-    const [result] = await db.execute(
+    connection = await db.getConnection();
+
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    // Generate a unique ID from user_id_generator.
+    const [sequenceResult] = await connection.execute(
+      `INSERT INTO user_id_generator () VALUES ()`
+    );
+
+    const newUserId = Number(sequenceResult.insertId);
+
+    if (!validId(newUserId)) {
+      throw new Error("Unable to generate a valid user ID.");
+    }
+
+    // Insert the user using the generated ID.
+    await connection.execute(
       `INSERT INTO users (
-         first_name, last_name, sex, email, phone, address,
-         about_me, password_hash, role, is_active
+         id,
+         first_name,
+         last_name,
+         sex,
+         email,
+         phone,
+         address,
+         about_me,
+         password_hash,
+         role,
+         is_active
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
       [
+        newUserId,
         firstName,
         lastName,
         sex,
@@ -197,23 +297,40 @@ async function createUser(req, res) {
       ]
     );
 
-    const [rows] = await db.execute(
+    const [rows] = await connection.execute(
       `SELECT
-         id, first_name, last_name, sex, email,
-         phone, address, about_me, profile_image,
-         role, is_active, created_at, updated_at
+         id,
+         first_name,
+         last_name,
+         sex,
+         email,
+         phone,
+         address,
+         about_me,
+         profile_image,
+         role,
+         is_active,
+         created_at,
+         updated_at
        FROM users
        WHERE id = ?`,
-      [result.insertId]
+      [newUserId]
     );
+
+    await connection.commit();
+    transactionStarted = false;
 
     return res.status(201).json({
       success: true,
       message: "User created successfully.",
       user: publicUser(rows[0]),
-      ...(generatedPassword ? { temporaryPassword: password } : {}),
+      ...(generatedPassword
+        ? { temporaryPassword: password }
+        : {}),
     });
   } catch (error) {
+    await rollbackSafely(connection, transactionStarted);
+
     if (error.code === "ER_DUP_ENTRY") {
       return res.status(409).json({
         success: false,
@@ -221,39 +338,55 @@ async function createUser(req, res) {
       });
     }
 
-    console.error("Create user error:", error.message);
+    console.error("Create user error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Unable to create user.",
     });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
   }
 }
 
+// =============================================
+// UPDATE USER
 // PUT /api/users/:id
+// =============================================
+
 async function updateUser(req, res) {
   const id = Number(req.params.id);
 
-  if (!Number.isSafeInteger(id) || id < 1) {
+  if (!validId(id)) {
     return res.status(400).json({
       success: false,
       message: "Invalid user ID.",
     });
   }
 
-  const connection = await db.getConnection();
+  let connection;
+  let transactionStarted = false;
 
   try {
+    connection = await db.getConnection();
+
     await connection.beginTransaction();
+    transactionStarted = true;
 
     const [targets] = await connection.execute(
       `SELECT id, role, is_active
-       FROM users WHERE id = ? FOR UPDATE`,
+       FROM users
+       WHERE id = ?
+       FOR UPDATE`,
       [id]
     );
 
     if (!targets.length) {
-      await connection.rollback();
+      await rollbackSafely(connection, transactionStarted);
+      transactionStarted = false;
+
       return res.status(404).json({
         success: false,
         message: "User not found.",
@@ -263,115 +396,179 @@ async function updateUser(req, res) {
     const target = targets[0];
     const body = req.body || {};
 
-    const firstName =
-      body.first_name === undefined
-        ? undefined
-        : String(body.first_name).trim();
+    const updates = [];
+    const values = [];
 
-    const lastName =
-      body.last_name === undefined
-        ? undefined
-        : String(body.last_name).trim();
+    // First name.
+    if (body.first_name !== undefined) {
+      const firstName = String(body.first_name).trim();
 
-    const email =
-      body.email === undefined
-        ? undefined
-        : String(body.email).trim().toLowerCase();
+      if (!firstName || firstName.length > 100) {
+        await rollbackSafely(connection, transactionStarted);
+        transactionStarted = false;
 
-    const phone =
-      body.phone === undefined
-        ? undefined
-        : String(body.phone).trim() || null;
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid first name.",
+        });
+      }
 
-    const address =
-      body.address === undefined
-        ? undefined
-        : String(body.address).trim() || null;
-
-    const aboutMe =
-      body.about_me === undefined
-        ? undefined
-        : String(body.about_me).trim() || null;
-
-    const sex = normalizeSex(body.sex);
-    const role = body.role === undefined
-      ? target.role
-      : String(body.role).trim();
-
-    if (firstName !== undefined && !firstName) {
-      await connection.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "First name cannot be empty.",
-      });
+      updates.push("first_name = ?");
+      values.push(firstName);
     }
 
-    if (lastName !== undefined && !lastName) {
-      await connection.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "Last name cannot be empty.",
-      });
+    // Last name.
+    if (body.last_name !== undefined) {
+      const lastName = String(body.last_name).trim();
+
+      if (!lastName || lastName.length > 100) {
+        await rollbackSafely(connection, transactionStarted);
+        transactionStarted = false;
+
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid last name.",
+        });
+      }
+
+      updates.push("last_name = ?");
+      values.push(lastName);
     }
 
-    if (
-      email !== undefined &&
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-    ) {
-      await connection.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid email address.",
-      });
+    // Email.
+    if (body.email !== undefined) {
+      const email = String(body.email).trim().toLowerCase();
+
+      if (!validEmail(email) || email.length > 190) {
+        await rollbackSafely(connection, transactionStarted);
+        transactionStarted = false;
+
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid email address.",
+        });
+      }
+
+      updates.push("email = ?");
+      values.push(email);
     }
 
-    if (body.sex !== undefined && sex === undefined) {
-      await connection.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "Invalid sex selection.",
-      });
+    // Sex.
+    if (body.sex !== undefined) {
+      const sex = normalizeSex(body.sex);
+
+      if (sex === undefined) {
+        await rollbackSafely(connection, transactionStarted);
+        transactionStarted = false;
+
+        return res.status(400).json({
+          success: false,
+          message: "Invalid sex selection.",
+        });
+      }
+
+      updates.push("sex = ?");
+      values.push(sex);
     }
+
+    // Phone: an empty value clears the field.
+    if (body.phone !== undefined) {
+      const phone = String(body.phone || "").trim() || null;
+
+      if (phone && phone.length > 30) {
+        await rollbackSafely(connection, transactionStarted);
+        transactionStarted = false;
+
+        return res.status(400).json({
+          success: false,
+          message: "Phone number cannot exceed 30 characters.",
+        });
+      }
+
+      updates.push("phone = ?");
+      values.push(phone);
+    }
+
+    // Address: an empty value clears the field.
+    if (body.address !== undefined) {
+      const address = String(body.address || "").trim() || null;
+
+      if (address && address.length > 255) {
+        await rollbackSafely(connection, transactionStarted);
+        transactionStarted = false;
+
+        return res.status(400).json({
+          success: false,
+          message: "Address cannot exceed 255 characters.",
+        });
+      }
+
+      updates.push("address = ?");
+      values.push(address);
+    }
+
+    // About me: an empty value clears the field.
+    if (body.about_me !== undefined) {
+      const aboutMe = String(body.about_me || "").trim() || null;
+
+      updates.push("about_me = ?");
+      values.push(aboutMe);
+    }
+
+    // Role.
+    const role =
+      body.role === undefined
+        ? target.role
+        : String(body.role).trim();
 
     if (!allowedRoles.includes(role)) {
-      await connection.rollback();
+      await rollbackSafely(connection, transactionStarted);
+      transactionStarted = false;
+
       return res.status(400).json({
         success: false,
         message: "Role must be owner or worker.",
       });
     }
 
-    if (
-      (firstName !== undefined && firstName.length > 100) ||
-      (lastName !== undefined && lastName.length > 100) ||
-      (email !== undefined && email.length > 190) ||
-      (phone && phone.length > 30) ||
-      (address && address.length > 255)
-    ) {
-      await connection.rollback();
+    // A worker cannot be promoted through this account-management flow.
+    if (target.role === "worker" && role === "owner") {
+      await rollbackSafely(connection, transactionStarted);
+      transactionStarted = false;
+
       return res.status(400).json({
         success: false,
-        message: "One or more fields exceed the allowed length.",
+        message: "Workers cannot be promoted to owner through this form.",
       });
     }
 
     if (id === Number(req.user.id) && role !== target.role) {
-      await connection.rollback();
+      await rollbackSafely(connection, transactionStarted);
+      transactionStarted = false;
+
       return res.status(400).json({
         success: false,
         message: "You cannot change your own role.",
       });
     }
 
-    if (target.role === "owner" && target.is_active && role !== "owner") {
+    if (
+      target.role === "owner" &&
+      parseActive(target.is_active) &&
+      role !== "owner"
+    ) {
       const [owners] = await connection.execute(
-        `SELECT id FROM users
-         WHERE role = 'owner' AND is_active = TRUE
+        `SELECT id
+         FROM users
+         WHERE role = 'owner'
+           AND is_active = TRUE
          FOR UPDATE`
       );
 
       if (owners.length <= 1) {
-        await connection.rollback();
+        await rollbackSafely(connection, transactionStarted);
+        transactionStarted = false;
+
         return res.status(400).json({
           success: false,
           message: "The last active owner cannot be demoted.",
@@ -379,40 +576,44 @@ async function updateUser(req, res) {
       }
     }
 
-    await connection.execute(
-      `UPDATE users SET
-         first_name = COALESCE(?, first_name),
-         last_name = COALESCE(?, last_name),
-         sex = CASE WHEN ? = 1 THEN ? ELSE sex END,
-         email = COALESCE(?, email),
-         phone = COALESCE(?, phone),
-         address = COALESCE(?, address),
-         about_me = COALESCE(?, about_me),
-         role = ?
+    if (role !== target.role) {
+      updates.push("role = ?");
+      values.push(role);
+    }
+
+    if (updates.length > 0) {
+      values.push(id);
+
+      await connection.execute(
+        `UPDATE users
+         SET ${updates.join(", ")}
+         WHERE id = ?`,
+        values
+      );
+    }
+
+    const [rows] = await connection.execute(
+      `SELECT
+         id,
+         first_name,
+         last_name,
+         sex,
+         email,
+         phone,
+         address,
+         about_me,
+         profile_image,
+         role,
+         is_active,
+         created_at,
+         updated_at
+       FROM users
        WHERE id = ?`,
-      [
-        firstName ?? null,
-        lastName ?? null,
-        body.sex !== undefined ? 1 : 0,
-        sex,
-        email ?? null,
-        phone === undefined ? null : phone,
-        address === undefined ? null : address,
-        aboutMe ?? null,
-        role,
-        id,
-      ]
+      [id]
     );
 
     await connection.commit();
-
-    const [rows] = await db.execute(
-      `SELECT id, first_name, last_name, sex, email, phone,
-              address, about_me, profile_image, role, is_active,
-              created_at, updated_at
-       FROM users WHERE id = ?`,
-      [id]
-    );
+    transactionStarted = false;
 
     return res.json({
       success: true,
@@ -420,7 +621,7 @@ async function updateUser(req, res) {
       user: publicUser(rows[0]),
     });
   } catch (error) {
-    await connection.rollback();
+    await rollbackSafely(connection, transactionStarted);
 
     if (error.code === "ER_DUP_ENTRY") {
       return res.status(409).json({
@@ -429,23 +630,30 @@ async function updateUser(req, res) {
       });
     }
 
-    console.error("Update user error:", error.message);
+    console.error("Update user error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Unable to update user.",
     });
   } finally {
-    connection.release();
+    if (connection) {
+      connection.release();
+    }
   }
 }
 
+// =============================================
+// ACTIVATE / DEACTIVATE USER
 // PATCH /api/users/:id/status
+// =============================================
+
 async function updateUserStatus(req, res) {
   const id = Number(req.params.id);
+
   const value = req.body?.isActive ?? req.body?.is_active;
 
-  if (!Number.isSafeInteger(id) || id < 1) {
+  if (!validId(id)) {
     return res.status(400).json({
       success: false,
       message: "Invalid user ID.",
@@ -466,19 +674,27 @@ async function updateUserStatus(req, res) {
     });
   }
 
-  const connection = await db.getConnection();
+  let connection;
+  let transactionStarted = false;
 
   try {
+    connection = await db.getConnection();
+
     await connection.beginTransaction();
+    transactionStarted = true;
 
     const [targets] = await connection.execute(
-      `SELECT id, role, is_active FROM users
-       WHERE id = ? FOR UPDATE`,
+      `SELECT id, role, is_active
+       FROM users
+       WHERE id = ?
+       FOR UPDATE`,
       [id]
     );
 
     if (!targets.length) {
-      await connection.rollback();
+      await rollbackSafely(connection, transactionStarted);
+      transactionStarted = false;
+
       return res.status(404).json({
         success: false,
         message: "User not found.",
@@ -489,17 +705,21 @@ async function updateUserStatus(req, res) {
 
     if (
       target.role === "owner" &&
-      target.is_active &&
+      parseActive(target.is_active) &&
       value === false
     ) {
       const [owners] = await connection.execute(
-        `SELECT id FROM users
-         WHERE role = 'owner' AND is_active = TRUE
+        `SELECT id
+         FROM users
+         WHERE role = 'owner'
+           AND is_active = TRUE
          FOR UPDATE`
       );
 
       if (owners.length <= 1) {
-        await connection.rollback();
+        await rollbackSafely(connection, transactionStarted);
+        transactionStarted = false;
+
         return res.status(400).json({
           success: false,
           message: "The last active owner cannot be deactivated.",
@@ -513,29 +733,37 @@ async function updateUserStatus(req, res) {
     );
 
     await connection.commit();
+    transactionStarted = false;
 
     return res.json({
       success: true,
       message: `User ${value ? "activated" : "deactivated"} successfully.`,
     });
   } catch (error) {
-    await connection.rollback();
-    console.error("Update user status error:", error.message);
+    await rollbackSafely(connection, transactionStarted);
+
+    console.error("Update user status error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Unable to update user status.",
     });
   } finally {
-    connection.release();
+    if (connection) {
+      connection.release();
+    }
   }
 }
 
+// =============================================
+// DELETE USER
 // DELETE /api/users/:id
+// =============================================
+
 async function deleteUser(req, res) {
   const id = Number(req.params.id);
 
-  if (!Number.isSafeInteger(id) || id < 1) {
+  if (!validId(id)) {
     return res.status(400).json({
       success: false,
       message: "Invalid user ID.",
@@ -549,19 +777,27 @@ async function deleteUser(req, res) {
     });
   }
 
-  const connection = await db.getConnection();
+  let connection;
+  let transactionStarted = false;
 
   try {
+    connection = await db.getConnection();
+
     await connection.beginTransaction();
+    transactionStarted = true;
 
     const [targets] = await connection.execute(
-      `SELECT id, role, is_active FROM users
-       WHERE id = ? FOR UPDATE`,
+      `SELECT id, role, is_active
+       FROM users
+       WHERE id = ?
+       FOR UPDATE`,
       [id]
     );
 
     if (!targets.length) {
-      await connection.rollback();
+      await rollbackSafely(connection, transactionStarted);
+      transactionStarted = false;
+
       return res.status(404).json({
         success: false,
         message: "User not found.",
@@ -570,15 +806,22 @@ async function deleteUser(req, res) {
 
     const target = targets[0];
 
-    if (target.role === "owner" && target.is_active) {
+    if (
+      target.role === "owner" &&
+      parseActive(target.is_active)
+    ) {
       const [owners] = await connection.execute(
-        `SELECT id FROM users
-         WHERE role = 'owner' AND is_active = TRUE
+        `SELECT id
+         FROM users
+         WHERE role = 'owner'
+           AND is_active = TRUE
          FOR UPDATE`
       );
 
       if (owners.length <= 1) {
-        await connection.rollback();
+        await rollbackSafely(connection, transactionStarted);
+        transactionStarted = false;
+
         return res.status(400).json({
           success: false,
           message: "The last active owner cannot be deleted.",
@@ -586,18 +829,27 @@ async function deleteUser(req, res) {
       }
     }
 
-    await connection.execute("DELETE FROM users WHERE id = ?", [id]);
+    await connection.execute(
+      "DELETE FROM users WHERE id = ?",
+      [id]
+    );
+
     await connection.commit();
+    transactionStarted = false;
 
     return res.json({
       success: true,
       message: "User deleted successfully.",
     });
   } catch (error) {
-    await connection.rollback();
-    console.error("Delete user error:", error.message);
+    await rollbackSafely(connection, transactionStarted);
 
-    if (error.code === "ER_ROW_IS_REFERENCED_2") {
+    console.error("Delete user error:", error);
+
+    if (
+      error.code === "ER_ROW_IS_REFERENCED_2" ||
+      error.code === "ER_ROW_IS_REFERENCED"
+    ) {
       return res.status(409).json({
         success: false,
         message:
@@ -610,16 +862,22 @@ async function deleteUser(req, res) {
       message: "Unable to delete user.",
     });
   } finally {
-    connection.release();
+    if (connection) {
+      connection.release();
+    }
   }
 }
 
+// =============================================
+// RESET USER PASSWORD
 // POST /api/users/:id/reset-password
+// =============================================
+
 async function resetPassword(req, res) {
   const id = Number(req.params.id);
   const password = req.body?.password;
 
-  if (!Number.isSafeInteger(id) || id < 1) {
+  if (!validId(id)) {
     return res.status(400).json({
       success: false,
       message: "Invalid user ID.",
@@ -645,7 +903,9 @@ async function resetPassword(req, res) {
     const passwordHash = await bcrypt.hash(password, 12);
 
     const [result] = await db.execute(
-      "UPDATE users SET password_hash = ? WHERE id = ?",
+      `UPDATE users
+       SET password_hash = ?
+       WHERE id = ?`,
       [passwordHash, id]
     );
 
@@ -661,14 +921,18 @@ async function resetPassword(req, res) {
       message: "Password reset successfully.",
     });
   } catch (error) {
-    console.error("Reset password error:", error.message);
+    console.error("Reset password error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to reset password.",
+      message: "Unable to reset user password.",
     });
   }
 }
+
+// =============================================
+// EXPORT CONTROLLERS
+// =============================================
 
 module.exports = {
   getUsers,
