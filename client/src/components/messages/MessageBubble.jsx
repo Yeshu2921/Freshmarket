@@ -1,4 +1,3 @@
-
 function formatTime(date) {
   if (!date) return "";
 
@@ -20,23 +19,32 @@ function MessageBubble({
     return null;
   }
 
-  // Ignore temporary attachment placeholder messages.
   const messageText = String(message.message_text || "").trim();
 
+  const normalizedText = messageText.toLowerCase();
+
+  // Hide old deleted-message placeholders.
   if (
-    messageText.toLowerCase() === "this message was deleted" ||
-    messageText.toLowerCase() === "this message was deleted." ||
-    (
-      messageText.toLowerCase() === "loading attachment..." &&
-      !message.attachment_url
-    )
+    normalizedText === "this message was deleted" ||
+    normalizedText === "this message was deleted."
   ) {
     return null;
   }
 
+  // Hide old unfinished attachment placeholders.
+  if (
+    normalizedText === "loading attachment..." &&
+    !message.attachment_url
+  ) {
+    return null;
+  }
+
+  const hasAttachment =
+    ["image", "audio", "video"].includes(message.message_type) &&
+    Boolean(message.attachment_url);
+
   function renderAttachment() {
-    // Do not show a loading placeholder.
-    if (!attachmentUrl) {
+    if (!hasAttachment || !attachmentUrl) {
       return null;
     }
 
@@ -91,7 +99,7 @@ function MessageBubble({
           <p>{messageText}</p>
         )}
 
-        {message.attachment_url && renderAttachment()}
+        {hasAttachment && renderAttachment()}
 
         <div className="fm-message-meta">
           <small>{formatTime(message.created_at)}</small>
@@ -102,6 +110,7 @@ function MessageBubble({
         </div>
 
         <div className="fm-message-actions">
+
           {isMine && message.message_type === "text" && (
             <button
               type="button"
@@ -119,6 +128,7 @@ function MessageBubble({
           >
             <i className="bi bi-trash" />
           </button>
+
         </div>
 
       </div>
