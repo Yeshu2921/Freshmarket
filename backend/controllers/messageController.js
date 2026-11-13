@@ -5,7 +5,7 @@ const fs = require("fs");
 const { emitToUser } = require("../socket/socketServer");
 const { createNotification } = require("./notificationController");
 
-const BACKEND_ROOT = path.join(__dirname, "..");
+const BACKEND_ROOT = path.resolve(__dirname, "..");
 
 const MESSAGE_UPLOAD_ROOT = path.join(
   BACKEND_ROOT,
@@ -34,7 +34,7 @@ async function generateId(connection, generatorType) {
     `INSERT INTO ${generatorTable} () VALUES ()`
   );
 
-  return result.insertId;
+  return Number(result.insertId);
 }
 
 // =============================================
@@ -81,7 +81,7 @@ async function getConversationUsers(conversationId) {
     [conversationId]
   );
 
-  return rows.map((row) => row.user_id);
+  return rows.map((row) => Number(row.user_id));
 }
 
 async function emitToConversation(conversationId, event, data) {
@@ -111,10 +111,12 @@ async function getFormattedMessage(messageId, currentUserId) {
       CASE
         WHEN m.deleted_for_everyone_at IS NOT NULL
           THEN NULL
+
         WHEN LOWER(TRIM(COALESCE(m.message_text, '')))
              = 'loading attachment...'
              AND m.attachment_path IS NOT NULL
           THEN NULL
+
         ELSE m.message_text
       END AS message_text,
 
@@ -201,17 +203,20 @@ async function getContacts(req, res) {
 
           WHERE m.conversation_id = c.id
 
-            -- Hide messages deleted for everyone.
             AND m.deleted_for_everyone_at IS NULL
 
-            -- Ignore unfinished attachment placeholders.
             AND NOT (
               LOWER(TRIM(COALESCE(m.message_text, '')))
                 = 'loading attachment...'
               AND m.attachment_path IS NULL
             )
 
-            -- Hide messages deleted by the current user.
+            AND LOWER(TRIM(COALESCE(m.message_text, '')))
+              NOT IN (
+                'this message was deleted',
+                'this message was deleted.'
+              )
+
             AND NOT EXISTS (
               SELECT 1
               FROM message_deletions md
@@ -391,12 +396,10 @@ async function openConversation(req, res) {
     if (existing.length) {
       conversationId = existing[0].conversation_id;
     } else {
-      const generatedId = await generateId(
+      conversationId = await generateId(
         connection,
         "conversations"
       );
-
-      conversationId = generatedId;
 
       await connection.execute(
         `
@@ -492,7 +495,6 @@ async function getMessages(req, res) {
       [conversationId, currentUserId]
     );
 
-    // Mark this conversation's message notifications as read.
     await db.execute(
       `
       UPDATE notifications
@@ -548,17 +550,20 @@ async function getMessages(req, res) {
 
       WHERE m.conversation_id = ?
 
-        -- Never return messages deleted for everyone.
         AND m.deleted_for_everyone_at IS NULL
 
-        -- Hide unfinished loading placeholders without an attachment.
         AND NOT (
           LOWER(TRIM(COALESCE(m.message_text, '')))
             = 'loading attachment...'
           AND m.attachment_path IS NULL
         )
 
-        -- Respect messages deleted only for this user.
+        AND LOWER(TRIM(COALESCE(m.message_text, '')))
+          NOT IN (
+            'this message was deleted',
+            'this message was deleted.'
+          )
+
         AND NOT EXISTS (
           SELECT 1
           FROM message_deletions md
@@ -605,7 +610,7 @@ async function getMessages(req, res) {
     const otherUsers = await getConversationUsers(conversationId);
 
     otherUsers
-      .filter((id) => id !== currentUserId)
+      .filter((id) => id !== Number(currentUserId))
       .forEach((id) => {
         emitToUser(id, "message:read", {
           conversationId,
@@ -672,6 +677,18 @@ async function sendMessage(req, res) {
       ? uploadedFile.messageCategory
       : "text";
 
+    if (
+      uploadedFile &&
+      !["image", "audio", "video", "file"].includes(messageType)
+    ) {
+      await removeUploadedFile(uploadedFile);
+
+      return res.status(400).json({
+        success: false,
+        message: "Unsupported attachment type.",
+      });
+    }
+
     const attachmentPath = uploadedFile
       ? path
           .relative(BACKEND_ROOT, uploadedFile.path)
@@ -683,7 +700,6 @@ async function sendMessage(req, res) {
 
     await connection.beginTransaction();
 
-    // Verify conversation membership.
     const [membership] = await connection.execute(
       `
       SELECT user_id
@@ -698,7 +714,7 @@ async function sendMessage(req, res) {
     if (
       membership.length !== 2 ||
       !membership.some(
-        (row) => row.user_id === currentUserId
+        (row) => Number(row.user_id) === Number(currentUserId)
       )
     ) {
       await connection.rollback();
@@ -711,13 +727,11 @@ async function sendMessage(req, res) {
       });
     }
 
-    // Generate a unique message ID.
     const messageId = await generateId(
       connection,
       "messages"
     );
 
-    // Save the message with its generated ID.
     await connection.execute(
       `
       INSERT INTO messages (
@@ -747,7 +761,6 @@ async function sendMessage(req, res) {
       ]
     );
 
-    // Update conversation activity.
     await connection.execute(
       `
       UPDATE conversations
@@ -761,7 +774,6 @@ async function sendMessage(req, res) {
 
     await connection.commit();
 
-    // Release the database connection before notification work.
     connection.release();
     connection = null;
 
@@ -770,10 +782,9 @@ async function sendMessage(req, res) {
       currentUserId
     );
 
-    // Notify the other participant after saving the message.
     const recipientIds = membership
-      .map((row) => row.user_id)
-      .filter((id) => id !== currentUserId);
+      .map((row) => Number(row.user_id))
+      .filter((id) => id !== Number(currentUserId));
 
     recipientIds.forEach((recipientId) => {
       emitToUser(recipientId, "message:new", {
@@ -931,19 +942,26 @@ async function deleteForEveryone(req, res) {
       });
     }
 
-    const message = await getFormattedMessage(
-      messageId,
-      currentUserId
+    const [rows] = await db.execute(
+      `
+      SELECT conversation_id
+      FROM messages
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [messageId]
     );
 
-    await emitToConversation(
-      message.conversation_id,
-      "message:deleted",
-      {
-        messageId,
-        conversationId: message.conversation_id,
-      }
-    );
+    if (rows.length) {
+      await emitToConversation(
+        rows[0].conversation_id,
+        "message:deleted",
+        {
+          messageId,
+          conversationId: rows[0].conversation_id,
+        }
+      );
+    }
 
     return res.status(200).json({
       success: true,
@@ -981,8 +999,6 @@ async function deleteForMe(req, res) {
 
     await connection.beginTransaction();
 
-    // Verify that the message belongs to a conversation
-    // in which the current user is a participant.
     const [messages] = await connection.execute(
       `
       SELECT m.id
@@ -1009,14 +1025,11 @@ async function deleteForMe(req, res) {
       });
     }
 
-    // Generate a unique deletion ID.
     const deletionId = await generateId(
       connection,
       "deletions"
     );
 
-    // Insert the personal deletion record.
-    // The unique key (message_id, user_id) prevents duplicates.
     await connection.execute(
       `
       INSERT IGNORE INTO message_deletions (
@@ -1109,17 +1122,32 @@ async function downloadAttachment(req, res) {
       rows[0].attachment_path
     );
 
-    const allowedRoot =
-      path.resolve(MESSAGE_UPLOAD_ROOT) + path.sep;
+    const allowedRoot = path.resolve(
+      MESSAGE_UPLOAD_ROOT
+    );
 
-    if (!storedPath.startsWith(allowedRoot)) {
+    const relativePath = path.relative(
+      allowedRoot,
+      storedPath
+    );
+
+    if (
+      !relativePath ||
+      relativePath.startsWith("..") ||
+      path.isAbsolute(relativePath)
+    ) {
       return res.status(403).json({
         success: false,
         message: "Invalid attachment location.",
       });
     }
 
-    if (!fs.existsSync(storedPath)) {
+    try {
+      await fs.promises.access(
+        storedPath,
+        fs.constants.R_OK
+      );
+    } catch {
       return res.status(404).json({
         success: false,
         message: "Attachment file is missing.",
@@ -1137,7 +1165,7 @@ async function downloadAttachment(req, res) {
 
     res.setHeader(
       "Content-Type",
-      rows[0].attachment_mime
+      rows[0].attachment_mime || "application/octet-stream"
     );
 
     res.setHeader(
