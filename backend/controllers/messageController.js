@@ -176,35 +176,41 @@ async function getContacts(req, res) {
         u.profile_image,
         c.id AS conversation_id,
 
-        (
-          SELECT
-            CASE
-              WHEN m.deleted_for_everyone_at IS NOT NULL
-                THEN 'This message was deleted'
+       
+(
+  SELECT
+    CASE
+      WHEN m.message_type <> 'text'
+        THEN CONCAT(
+          UPPER(LEFT(m.message_type, 1)),
+          SUBSTRING(m.message_type, 2)
+        )
+      ELSE COALESCE(m.message_text, '')
+    END
 
-              WHEN m.message_type <> 'text'
-                THEN CONCAT(
-                  UPPER(LEFT(m.message_type, 1)),
-                  SUBSTRING(m.message_type, 2)
-                )
+  FROM messages m
 
-              ELSE COALESCE(m.message_text, '')
-            END
+  WHERE m.conversation_id = c.id
 
-          FROM messages m
+    -- Hide messages deleted for everyone.
+    AND m.deleted_for_everyone_at IS NULL
 
-          WHERE m.conversation_id = c.id
+    -- Ignore attachment loading placeholders.
+    AND LOWER(TRIM(COALESCE(m.message_text, '')))
+        <> 'loading attachment...'
 
-            AND NOT EXISTS (
-              SELECT 1
-              FROM message_deletions md
-              WHERE md.message_id = m.id
-                AND md.user_id = ?
-            )
+    -- Hide messages deleted by the current user.
+    AND NOT EXISTS (
+      SELECT 1
+      FROM message_deletions md
+      WHERE md.message_id = m.id
+        AND md.user_id = ?
+    )
 
-          ORDER BY m.id DESC
-          LIMIT 1
-        ) AS last_message,
+  ORDER BY m.id DESC
+  LIMIT 1
+) AS last_message,
+
 
         (
           SELECT COUNT(*)
