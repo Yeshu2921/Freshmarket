@@ -26,7 +26,19 @@ function getProfileImage(imagePath) {
 
   return `${API_ORIGIN}/${image.replace(/^\/+/, "")}`;
 }
+function getContactPreview(lastMessage) {
+  const message = String(lastMessage || "").trim();
 
+  if (
+    message.toLowerCase() === "this message was deleted" ||
+    message.toLowerCase() === "this message was deleted." ||
+    message.toLowerCase() === "loading attachment..."
+  ) {
+    return "";
+  }
+
+  return message || "Start a conversation";
+}
 // =============================================
 // CONTACT LIST
 // =============================================
@@ -100,8 +112,8 @@ function ContactList({
                 <small>{contact.role}</small>
 
                 <span>
-                  {contact.last_message || "Start a conversation"}
-                </span>
+            {getContactPreview(contact.last_message)}
+                  </span>
 
               </div>
 
