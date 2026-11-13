@@ -1,4 +1,3 @@
-
 const db = require("../db");
 const path = require("path");
 const fs = require("fs");
@@ -65,17 +64,11 @@ async function removeUploadedFile(file) {
   }
 }
 
-// Only create an attachment URL when a real attachment exists.
+// Only create an attachment URL when an actual attachment exists.
 function attachmentUrl(messageId, attachmentPath, deletedAt) {
   if (deletedAt || !attachmentPath) {
     return null;
   }
-
-  // Matches server.js:
-  // app.use("/api/messages", messageRoutes)
-  //
-  // Matches messageRoutes.js:
-  // router.get("/messages/:messageId/attachment", downloadAttachment)
 
   return `/api/messages/messages/${messageId}/attachment`;
 }
@@ -153,15 +146,12 @@ async function getFormattedMessage(messageId, currentUserId) {
     [currentUserId, messageId]
   );
 
-  if (!rows.length) {
-    return null;
-  }
+  if (!rows.length) return null;
 
   const message = rows[0];
 
   const formatted = {
     ...message,
-
     attachment_url: attachmentUrl(
       message.id,
       message.attachment_path,
@@ -169,7 +159,6 @@ async function getFormattedMessage(messageId, currentUserId) {
     ),
   };
 
-  // Never expose private server file paths.
   delete formatted.attachment_path;
 
   if (message.deleted_for_everyone_at) {
@@ -457,9 +446,7 @@ async function openConversation(req, res) {
       "Could not open the conversation."
     );
   } finally {
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 }
 
@@ -596,7 +583,6 @@ async function getMessages(req, res) {
     const formattedMessages = messages.reverse().map((message) => {
       const formatted = {
         ...message,
-
         attachment_url: attachmentUrl(
           message.id,
           message.attachment_path,
@@ -604,7 +590,6 @@ async function getMessages(req, res) {
         ),
       };
 
-      // Do not expose the private file path.
       delete formatted.attachment_path;
 
       return formatted;
@@ -849,9 +834,7 @@ async function sendMessage(req, res) {
       "Failed to send message."
     );
   } finally {
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 }
 
@@ -1082,9 +1065,7 @@ async function deleteForMe(req, res) {
       "Failed to hide message."
     );
   } finally {
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 }
 
