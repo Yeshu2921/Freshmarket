@@ -641,6 +641,9 @@ async function forgotPassword(req, res) {
       });
     }
 
+    // STEP 1: Find user
+    console.log("FORGOT PASSWORD [1]: Checking database...");
+
     const [users] = await db.execute(
       `SELECT id, first_name, last_name, email, role, is_active
        FROM users
@@ -649,12 +652,15 @@ async function forgotPassword(req, res) {
       [email]
     );
 
-    // Do not disclose whether an email belongs to an account.
+    console.log("FORGOT PASSWORD [2]: User database query completed.");
+
     if (
       !users.length ||
       !users[0].is_active ||
       !["owner", "worker"].includes(users[0].role)
     ) {
+      console.log("FORGOT PASSWORD: No eligible account found.");
+
       return res.json({
         success: true,
         message: genericMessage,
@@ -666,7 +672,7 @@ async function forgotPassword(req, res) {
       !process.env.SMTP_PASS ||
       !process.env.FRONTEND_URL
     ) {
-      console.error("Password-reset email settings are missing.");
+      console.error("FORGOT PASSWORD: Email settings are missing.");
 
       return res.status(500).json({
         success: false,
@@ -676,10 +682,11 @@ async function forgotPassword(req, res) {
 
     const user = users[0];
 
-    // Generate a cryptographically secure, single-use token.
+    // STEP 2: Generate secure token
+    console.log("FORGOT PASSWORD [3]: Generating secure token...");
+
     const rawToken = crypto.randomBytes(32).toString("hex");
 
-    // Store only the token hash in the database.
     const tokenHash = crypto
       .createHash("sha256")
       .update(rawToken)
@@ -689,7 +696,9 @@ async function forgotPassword(req, res) {
       Date.now() + PASSWORD_RESET_EXPIRY_MINUTES * 60 * 1000
     );
 
-    // Invalidate previous unused reset tokens.
+    // STEP 3: Invalidate old tokens
+    console.log("FORGOT PASSWORD [4]: Invalidating previous tokens...");
+
     await db.execute(
       `UPDATE password_reset_tokens
        SET used_at = NOW()
@@ -697,16 +706,29 @@ async function forgotPassword(req, res) {
       [user.id]
     );
 
-    // Generate explicit TiDB ID.
+    console.log("FORGOT PASSWORD [5]: Previous tokens invalidated.");
+
+    // STEP 4: Generate token ID
+    console.log("FORGOT PASSWORD [6]: Generating token ID...");
+
     const resetTokenId = await generatePasswordResetTokenId();
 
-    // Insert reset token with its generated ID.
+    console.log("FORGOT PASSWORD [7]: Token ID generated.");
+
+    // STEP 5: Insert reset token
+    console.log("FORGOT PASSWORD [8]: Saving reset token...");
+
     await db.execute(
       `INSERT INTO password_reset_tokens
          (id, user_id, token_hash, expires_at)
        VALUES (?, ?, ?, ?)`,
       [resetTokenId, user.id, tokenHash, expiresAt]
     );
+
+    console.log("FORGOT PASSWORD [9]: Reset token saved.");
+
+    // STEP 6: Configure SMTP
+    console.log("FORGOT PASSWORD [10]: Configuring SMTP...");
 
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || "smtp.gmail.com",
@@ -716,6 +738,9 @@ async function forgotPassword(req, res) {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
     });
 
     const frontendUrl = process.env.FRONTEND_URL.replace(/\/+$/, "");
@@ -726,6 +751,9 @@ async function forgotPassword(req, res) {
     const displayName =
       [user.first_name, user.last_name].filter(Boolean).join(" ") ||
       "FreshMart user";
+
+    // STEP 7: Send email
+    console.log("FORGOT PASSWORD [11]: Sending email through SMTP...");
 
     try {
       await transporter.sendMail({
@@ -756,8 +784,14 @@ async function forgotPassword(req, res) {
           </div>
         `,
       });
+
+      console.log("FORGOT PASSWORD [12]: Email sent successfully.");
+
     } catch (emailError) {
-      // Invalidate the token if email delivery fails.
+      console.error("FORGOT PASSWORD SMTP ERROR:", emailError.message);
+
+      console.log("FORGOT PASSWORD: Invalidating token after email failure.");
+
       await db.execute(
         `UPDATE password_reset_tokens
          SET used_at = NOW()
@@ -768,12 +802,18 @@ async function forgotPassword(req, res) {
       throw emailError;
     }
 
+    console.log("FORGOT PASSWORD [13]: Request completed successfully.");
+
     return res.json({
       success: true,
       message: genericMessage,
     });
+
   } catch (error) {
-    console.error("Forgot password error:", error.message);
+    console.error("FORGOT PASSWORD FINAL ERROR:", error);
+    console.error("FORGOT PASSWORD ERROR MESSAGE:", error.message);
+    console.error("FORGOT PASSWORD ERROR CODE:", error.code);
+    console.error("FORGOT PASSWORD ERROR COMMAND:", error.command);
 
     return res.status(500).json({
       success: false,
