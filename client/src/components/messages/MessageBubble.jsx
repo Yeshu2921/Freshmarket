@@ -15,11 +15,29 @@ function MessageBubble({
   onEdit,
   onDelete,
 }) {
-  const deleted = Boolean(message.deleted_for_everyone_at);
+  // Never render a message deleted for everyone.
+  if (message.deleted_for_everyone_at) {
+    return null;
+  }
+
+  // Ignore temporary attachment placeholder messages.
+  const messageText = String(message.message_text || "").trim();
+
+  if (
+    messageText.toLowerCase() === "this message was deleted" ||
+    messageText.toLowerCase() === "this message was deleted." ||
+    (
+      messageText.toLowerCase() === "loading attachment..." &&
+      !message.attachment_url
+    )
+  ) {
+    return null;
+  }
 
   function renderAttachment() {
+    // Do not show a loading placeholder.
     if (!attachmentUrl) {
-      return <small>Loading attachment...</small>;
+      return null;
     }
 
     switch (message.message_type) {
@@ -68,47 +86,41 @@ function MessageBubble({
       }`}
     >
       <div className="fm-message-bubble">
-        {deleted ? (
-          <i>This message was deleted.</i>
-        ) : (
-          <>
-            {message.message_text && (
-              <p>{message.message_text}</p>
-            )}
 
-            {message.attachment_url && renderAttachment()}
-          </>
+        {messageText && (
+          <p>{messageText}</p>
         )}
+
+        {message.attachment_url && renderAttachment()}
 
         <div className="fm-message-meta">
           <small>{formatTime(message.created_at)}</small>
 
-          {message.edited_at && !deleted && (
+          {message.edited_at && (
             <small>Edited</small>
           )}
         </div>
 
-        {!deleted && (
-          <div className="fm-message-actions">
-            {isMine && message.message_type === "text" && (
-              <button
-                type="button"
-                title="Edit message"
-                onClick={() => onEdit(message)}
-              >
-                <i className="bi bi-pencil" />
-              </button>
-            )}
-
+        <div className="fm-message-actions">
+          {isMine && message.message_type === "text" && (
             <button
               type="button"
-              title="Delete message"
-              onClick={() => onDelete(message)}
+              title="Edit message"
+              onClick={() => onEdit(message)}
             >
-              <i className="bi bi-trash" />
+              <i className="bi bi-pencil" />
             </button>
-          </div>
-        )}
+          )}
+
+          <button
+            type="button"
+            title="Delete message"
+            onClick={() => onDelete(message)}
+          >
+            <i className="bi bi-trash" />
+          </button>
+        </div>
+
       </div>
     </div>
   );
