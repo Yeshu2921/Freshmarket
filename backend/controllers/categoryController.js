@@ -124,21 +124,25 @@ async function getParentCategories(req, res) {
 }
 
 // POST /api/categories
+
+// POST /api/categories
 async function createCategory(req, res) {
   let connection;
+  let transactionStarted = false;
 
   try {
     const categoryName =
-      typeof req.body.category_name === "string"
+      typeof req.body?.category_name === "string"
         ? req.body.category_name.trim()
         : "";
 
     const description =
-      typeof req.body.description === "string"
+      typeof req.body?.description === "string"
         ? req.body.description.trim() || null
         : null;
 
-    const rawParentId = req.body.parent_id;
+    const rawParentId = req.body?.parent_id;
+
     const parentId =
       rawParentId === undefined ||
       rawParentId === null ||
@@ -146,6 +150,7 @@ async function createCategory(req, res) {
         ? null
         : Number(rawParentId);
 
+    // Validate category name.
     if (!categoryName) {
       return res.status(400).json({
         success: false,
@@ -160,6 +165,7 @@ async function createCategory(req, res) {
       });
     }
 
+    // Validate parent ID.
     if (
       parentId !== null &&
       (!Number.isSafeInteger(parentId) || parentId < 1)
@@ -171,16 +177,23 @@ async function createCategory(req, res) {
     }
 
     connection = await db.getConnection();
-    await connection.beginTransaction();
 
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    // Check that the selected parent exists.
     if (parentId !== null) {
       const [parents] = await connection.execute(
-        "SELECT id FROM categories WHERE id = ? FOR UPDATE",
+        `SELECT id
+         FROM categories
+         WHERE id = ?
+         FOR UPDATE`,
         [parentId]
       );
 
       if (parents.length === 0) {
         await connection.rollback();
+        transactionStarted = false;
 
         return res.status(400).json({
           success: false,
@@ -189,45 +202,85 @@ async function createCategory(req, res) {
       }
     }
 
-    const [result] = await connection.execute(
-      `INSERT INTO categories
-        (category_name, parent_id, description)
-       VALUES (?, ?, ?)`,
-      [categoryName, parentId, description]
+    // Generate a new ID using the existing generator table.
+    const [sequenceResult] = await connection.execute(
+      "INSERT INTO user_id_generator () VALUES ()"
     );
 
-    await connection.commit();
+    const categoryId = Number(sequenceResult.insertId);
 
-    const [rows] = await db.execute(
-      `SELECT c.id, c.category_name, c.parent_id,
-              p.category_name AS parent_name,
-              c.description, c.is_active, c.created_at
+    if (!Number.isSafeInteger(categoryId) || categoryId < 1) {
+      throw new Error("Failed to generate category ID.");
+    }
+
+    // Insert category with generated ID.
+    await connection.execute(
+      `INSERT INTO categories (
+         id,
+         category_name,
+         parent_id,
+         description
+       )
+       VALUES (?, ?, ?, ?)`,
+      [
+        categoryId,
+        categoryName,
+        parentId,
+        description,
+      ]
+    );
+
+    // Get the newly created category.
+    const [rows] = await connection.execute(
+      `SELECT
+         c.id,
+         c.category_name,
+         c.parent_id,
+         p.category_name AS parent_name,
+         c.description,
+         c.is_active,
+         c.created_at
        FROM categories c
        LEFT JOIN categories p ON p.id = c.parent_id
        WHERE c.id = ?`,
-      [result.insertId]
+      [categoryId]
     );
+
+    await connection.commit();
+    transactionStarted = false;
 
     return res.status(201).json({
       success: true,
       message: "Category created successfully.",
       data: rows[0],
     });
+
   } catch (error) {
-    if (connection) {
+    if (connection && transactionStarted) {
       await connection.rollback().catch(() => {});
     }
 
     console.error("Create category error:", error);
 
+    if (error.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({
+        success: false,
+        message: "This category ID or another unique value already exists.",
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "Failed to create category.",
     });
+
   } finally {
-    if (connection) connection.release();
+    if (connection) {
+      connection.release();
+    }
   }
 }
+
 
 // PUT /api/categories/:id
 async function updateCategory(req, res) {
