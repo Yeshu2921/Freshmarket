@@ -1,5 +1,5 @@
-const {createNotification,
-} = require("./notificationController");
+
+const { createNotification } = require("./notificationController");
 const db = require("../db");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
@@ -8,14 +8,45 @@ const path = require("path");
 
 const CASH_METHOD = "Cash on Delivery";
 
-// Remove an uploaded receipt if order creation fails.
+// =============================================
+// TIDB ID GENERATORS
+// =============================================
+
+const ID_GENERATORS = {
+  customerProfiles: "customer_profile_id_generator",
+  customerOrders: "customer_order_id_generator",
+  customerOrderItems: "customer_order_item_id_generator",
+  customerPayments: "customer_payment_id_generator",
+};
+
+async function generateId(connection, generatorType) {
+  const generatorTable = ID_GENERATORS[generatorType];
+
+  if (!generatorTable) {
+    throw new Error("Invalid ID generator type.");
+  }
+
+  const [result] = await connection.execute(
+    `INSERT INTO ${generatorTable} () VALUES ()`
+  );
+
+  return result.insertId;
+}
+
+// =============================================
+// REMOVE UPLOADED RECEIPT
+// =============================================
+
 function removeUploadedReceipt(file) {
   if (!file?.path) return Promise.resolve();
 
   return fs.unlink(file.path).catch(() => {});
 }
 
-// Generate a unique order number.
+// =============================================
+// GENERATE UNIQUE ORDER NUMBER
+// =============================================
+
 function createOrderNumber() {
   const date = new Date()
     .toISOString()
@@ -25,7 +56,10 @@ function createOrderNumber() {
   return `FM-${date}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 }
 
-// Validate and combine requested products.
+// =============================================
+// VALIDATE AND COMBINE ORDER ITEMS
+// =============================================
+
 function normalizeItems(value) {
   let items = value;
 
@@ -73,8 +107,10 @@ function normalizeItems(value) {
   }));
 }
 
-// Always use selling_price for customer orders.
-// discount_price is only the original price displayed to customers.
+// =============================================
+// GET TRUSTED PRODUCT PRICE
+// =============================================
+
 function getTrustedUnitPrice(product) {
   const sellingPrice = Number(product.selling_price);
 
@@ -85,14 +121,10 @@ function getTrustedUnitPrice(product) {
   return sellingPrice;
 }
 
-// Find or create a customer profile.
-//
-// Rules:
-// Same phone + same PIN = reuse existing profile.
-// Same phone + different PIN = create new profile.
-// Different phone + same PIN = create new profile.
-//
-// A MySQL named lock serializes profile creation for the same phone.
+// =============================================
+// FIND OR CREATE CUSTOMER PROFILE
+// =============================================
+
 async function findOrCreateCustomerProfile(
   connection,
   fullName,
@@ -128,7 +160,7 @@ async function findOrCreateCustomerProfile(
       [phone]
     );
 
-    // Compare the submitted PIN with each existing profile.
+    // Compare the submitted PIN with existing profiles.
     for (const profile of existingProfiles) {
       if (!profile.pin_hash) continue;
 
@@ -138,8 +170,7 @@ async function findOrCreateCustomerProfile(
       );
 
       if (pinMatches) {
-        // Same phone and same PIN.
-        // Reuse this customer profile.
+        // Same phone and same PIN: reuse profile.
         await connection.execute(
           `UPDATE customer_profiles
            SET full_name = ?
@@ -151,20 +182,29 @@ async function findOrCreateCustomerProfile(
       }
     }
 
-    // No matching phone + PIN combination exists.
-    // Create a separate customer profile.
+    // No matching phone + PIN combination.
+    // Create a new customer profile.
     const pinHash = await bcrypt.hash(pin, 12);
 
-    const [profileResult] = await connection.execute(
-      `INSERT INTO customer_profiles
-         (full_name, phone, pin_hash)
-       VALUES (?, ?, ?)`,
-      [fullName, phone, pinHash]
+    const profileId = await generateId(
+      connection,
+      "customerProfiles"
     );
 
-    return profileResult.insertId;
+    await connection.execute(
+      `INSERT INTO customer_profiles (
+         id,
+         full_name,
+         phone,
+         pin_hash
+       )
+       VALUES (?, ?, ?, ?)`,
+      [profileId, fullName, phone, pinHash]
+    );
+
+    return profileId;
   } finally {
-    // Release the named lock even if profile creation fails.
+    // Always release the named lock.
     await connection.execute(
       "SELECT RELEASE_LOCK(?)",
       [lockName]
@@ -172,12 +212,18 @@ async function findOrCreateCustomerProfile(
   }
 }
 
+// =============================================
 // POST /api/customer-orders
+// CREATE CUSTOMER ORDER
+// =============================================
+
 async function createCustomerOrder(req, res) {
   const body = req.body || {};
 
   const fullName = String(body.fullName || "").trim();
+
   const phone = String(body.phone || "").replace(/\s+/g, "");
+
   const deliveryLocation =
     String(body.deliveryLocation || "").trim() || null;
 
@@ -191,7 +237,10 @@ async function createCustomerOrder(req, res) {
 
   const isCash = paymentMethod === CASH_METHOD;
 
-  // Validate customer information.
+  // =============================================
+  // VALIDATE CUSTOMER INFORMATION
+  // =============================================
+
   if (
     !fullName ||
     fullName.length > 150 ||
@@ -207,7 +256,10 @@ async function createCustomerOrder(req, res) {
     });
   }
 
-  // Validate PIN.
+  // =============================================
+  // VALIDATE PIN
+  // =============================================
+
   if (!/^\d{4,6}$/.test(pin)) {
     await removeUploadedReceipt(req.file);
 
@@ -217,7 +269,10 @@ async function createCustomerOrder(req, res) {
     });
   }
 
-  // Validate payment method.
+  // =============================================
+  // VALIDATE PAYMENT METHOD
+  // =============================================
+
   if (!paymentMethod || paymentMethod.length > 100) {
     await removeUploadedReceipt(req.file);
 
@@ -227,7 +282,10 @@ async function createCustomerOrder(req, res) {
     });
   }
 
-  // Validate product list.
+  // =============================================
+  // VALIDATE PRODUCT LIST
+  // =============================================
+
   if (!items) {
     await removeUploadedReceipt(req.file);
 
@@ -237,7 +295,10 @@ async function createCustomerOrder(req, res) {
     });
   }
 
-  // Electronic payment requires a receipt.
+  // =============================================
+  // ELECTRONIC PAYMENT REQUIRES RECEIPT
+  // =============================================
+
   if (!isCash && !req.file) {
     return res.status(400).json({
       success: false,
@@ -245,7 +306,10 @@ async function createCustomerOrder(req, res) {
     });
   }
 
-  // Cash on delivery does not require a receipt.
+  // =============================================
+  // CASH PAYMENT DOES NOT REQUIRE RECEIPT
+  // =============================================
+
   if (isCash && req.file) {
     await removeUploadedReceipt(req.file);
 
@@ -264,8 +328,10 @@ async function createCustomerOrder(req, res) {
     await connection.beginTransaction();
     transactionStarted = true;
 
-    // Validate electronic payment methods.
-    // Only owner-created active payment methods are accepted.
+    // =============================================
+    // VALIDATE ELECTRONIC PAYMENT METHOD
+    // =============================================
+
     if (!isCash) {
       const [availableMethods] = await connection.execute(
         `SELECT id
@@ -286,7 +352,10 @@ async function createCustomerOrder(req, res) {
       }
     }
 
-    // Find an existing matching profile or create a new one.
+    // =============================================
+    // FIND OR CREATE CUSTOMER PROFILE
+    // =============================================
+
     const customerId = await findOrCreateCustomerProfile(
       connection,
       fullName,
@@ -294,10 +363,14 @@ async function createCustomerOrder(req, res) {
       pin
     );
 
+    // =============================================
+    // VALIDATE PRODUCTS AND CALCULATE SUBTOTAL
+    // =============================================
+
     let subtotal = 0;
+
     const orderItems = [];
 
-    // Validate products and current stock.
     for (const requestedItem of items) {
       const [products] = await connection.execute(
         `SELECT
@@ -332,6 +405,7 @@ async function createCustomerOrder(req, res) {
 
       const product = products[0];
 
+      // Check product status.
       if (
         String(product.status).trim().toLowerCase() !== "active"
       ) {
@@ -343,7 +417,7 @@ async function createCustomerOrder(req, res) {
         );
       }
 
-      // Check stock when placing the order.
+      // Check available stock.
       // Stock is deducted only after worker approval.
       if (Number(product.quantity) < requestedItem.quantity) {
         throw Object.assign(
@@ -354,6 +428,7 @@ async function createCustomerOrder(req, res) {
         );
       }
 
+      // Use trusted selling price.
       const unitPrice = getTrustedUnitPrice(product);
 
       const lineTotal = Number(
@@ -374,18 +449,34 @@ async function createCustomerOrder(req, res) {
       });
     }
 
-    // Delivery fee is currently zero.
+    // =============================================
+    // CALCULATE DELIVERY FEE AND GRAND TOTAL
+    // =============================================
+
     const deliveryFee = 0;
 
     const grandTotal = Number(
       (subtotal + deliveryFee).toFixed(2)
     );
 
+    // =============================================
+    // GENERATE ORDER NUMBER AND ORDER ID
+    // =============================================
+
     const orderNumber = createOrderNumber();
 
-    // Create a new order for every successful submission.
-    const [orderResult] = await connection.execute(
+    const orderId = await generateId(
+      connection,
+      "customerOrders"
+    );
+
+    // =============================================
+    // CREATE CUSTOMER ORDER
+    // =============================================
+
+    await connection.execute(
       `INSERT INTO customer_orders (
+         id,
          order_number,
          customer_id,
          delivery_location,
@@ -395,8 +486,9 @@ async function createCustomerOrder(req, res) {
          grand_total,
          order_status
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending')`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending')`,
       [
+        orderId,
         orderNumber,
         customerId,
         deliveryLocation,
@@ -407,12 +499,19 @@ async function createCustomerOrder(req, res) {
       ]
     );
 
-    const orderId = orderResult.insertId;
+    // =============================================
+    // SAVE ORDER PRODUCTS
+    // =============================================
 
-    // Save order products.
     for (const item of orderItems) {
+      const itemId = await generateId(
+        connection,
+        "customerOrderItems"
+      );
+
       await connection.execute(
         `INSERT INTO customer_order_items (
+           id,
            order_id,
            product_id,
            product_name,
@@ -421,8 +520,9 @@ async function createCustomerOrder(req, res) {
            quantity,
            line_total
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
+          itemId,
           orderId,
           item.productId,
           item.productName,
@@ -438,7 +538,10 @@ async function createCustomerOrder(req, res) {
       // Both updates happen only after worker approval.
     }
 
-    // Save the private receipt path.
+    // =============================================
+    // SAVE PRIVATE RECEIPT PATH
+    // =============================================
+
     let receiptPath = null;
 
     if (req.file) {
@@ -451,17 +554,27 @@ async function createCustomerOrder(req, res) {
         .join("/");
     }
 
-    // Create pending payment record.
+    // =============================================
+    // CREATE PENDING PAYMENT RECORD
+    // =============================================
+
+    const paymentId = await generateId(
+      connection,
+      "customerPayments"
+    );
+
     await connection.execute(
       `INSERT INTO customer_payments (
+         id,
          order_id,
          payment_method,
          amount,
          receipt_path,
          payment_status
        )
-       VALUES (?, ?, ?, ?, 'Pending')`,
+       VALUES (?, ?, ?, ?, ?, 'Pending')`,
       [
+        paymentId,
         orderId,
         paymentMethod,
         grandTotal,
@@ -469,54 +582,59 @@ async function createCustomerOrder(req, res) {
       ]
     );
 
-    // Commit the complete order first.
-await connection.commit();
-transactionStarted = false;
+    // =============================================
+    // COMMIT COMPLETE ORDER
+    // =============================================
 
-// =============================================
-// NOTIFY ACTIVE OWNER AND WORKERS
-// =============================================
+    await connection.commit();
 
-try {
-  // Find all active Owner and Worker accounts.
-  const [recipients] = await db.execute(
-    `SELECT id
-     FROM users
-     WHERE is_active = 1
-       AND role IN ('owner', 'worker')`
-  );
+    transactionStarted = false;
 
-  // Save a notification for each recipient.
-  // Socket.IO delivers it immediately when they are online.
-  const notificationResults = await Promise.allSettled(
-    recipients.map((recipient) =>
-      createNotification({
-        userId: recipient.id,
-        type: "new_order",
-        title: "New Customer Order",
-        message: `Order ${orderNumber} has been submitted.`,
-        referenceId: orderId,
-      })
-    )
-  );
+    // =============================================
+    // NOTIFY ACTIVE OWNER AND WORKERS
+    // =============================================
 
-  notificationResults.forEach((result) => {
-    if (result.status === "rejected") {
+    try {
+      const [recipients] = await db.execute(
+        `SELECT id
+         FROM users
+         WHERE is_active = 1
+           AND role IN ('owner', 'worker')`
+      );
+
+      const notificationResults = await Promise.allSettled(
+        recipients.map((recipient) =>
+          createNotification({
+            userId: recipient.id,
+            type: "new_order",
+            title: "New Customer Order",
+            message: `Order ${orderNumber} has been submitted.`,
+            referenceId: orderId,
+          })
+        )
+      );
+
+      notificationResults.forEach((result) => {
+        if (result.status === "rejected") {
+          console.error(
+            "Could not create an order notification:",
+            result.reason?.message
+          );
+        }
+      });
+    } catch (notificationError) {
+      // Order is already committed.
+      // Notification failure must not make the customer
+      // think the order itself failed.
       console.error(
-        "Could not create an order notification:",
-        result.reason?.message
+        "Order notification error:",
+        notificationError.message
       );
     }
-  });
-} catch (notificationError) {
-  // The order is already committed.
-  // A notification failure must not make the customer think
-  // the order itself failed.
-  console.error(
-    "Order notification error:",
-    notificationError.message
-  );
-}
+
+    // =============================================
+    // SUCCESS RESPONSE
+    // =============================================
 
     return res.status(201).json({
       success: true,
@@ -532,11 +650,17 @@ try {
         grand_total: grandTotal,
       },
     });
+
   } catch (error) {
+    // =============================================
+    // ROLLBACK FAILED TRANSACTION
+    // =============================================
+
     if (connection && transactionStarted) {
       await connection.rollback().catch(() => {});
     }
 
+    // Remove uploaded receipt if order creation fails.
     await removeUploadedReceipt(req.file);
 
     if (error.statusCode) {
@@ -561,12 +685,17 @@ try {
       success: false,
       message: "Could not place your order. Please try again.",
     });
+
   } finally {
     if (connection) {
       connection.release();
     }
   }
 }
+
+// =============================================
+// EXPORTS
+// =============================================
 
 module.exports = {
   createCustomerOrder,
