@@ -464,22 +464,41 @@ export default function YourOrders() {
                       </span>
                     </div>
 
-                    {/* Payment rejection reason */}
-                    {order.payment_rejection_reason && (
-                      <Alert
-                        variant="danger"
-                        className="order-rejection"
-                      >
-                        <strong>
-                          Payment Rejection Reason:
-                        </strong>
+                    {/* Order rejection reason */}
+{String(order.order_status || "").toLowerCase() ===
+  "rejected" && (
+  <Alert
+    variant="danger"
+    className="order-rejection"
+  >
+    <strong>
+      <i className="bi bi-exclamation-triangle-fill me-2" />
+      Order Rejected
+    </strong>
 
-                        <p className="mb-0">
-                          {order.payment_rejection_reason}
-                        </p>
-                      </Alert>
-                    )}
+    <p className="mb-0 mt-2">
+      <strong>Reason:</strong>{" "}
+      {order.order_rejection_reason ||
+        "No rejection reason was provided."}
+    </p>
+  </Alert>
+)}
 
+{/* Payment rejection reason */}
+{order.payment_rejection_reason && (
+  <Alert
+    variant="danger"
+    className="order-rejection"
+  >
+    <strong>
+      Payment Rejection Reason:
+    </strong>
+
+    <p className="mb-0">
+      {order.payment_rejection_reason}
+    </p>
+  </Alert>
+)}
                     {/* Delivery location */}
                     {order.delivery_location && (
                       <div className="order-location">
