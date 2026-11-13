@@ -5,12 +5,6 @@ const path = require("path");
 
 // ======================================================
 // CUSTOMER ORDER REVIEW ID GENERATOR
-//
-// TiDB requires an explicit ID because
-// customer_order_reviews.id is not AUTO_INCREMENT.
-//
-// Generator table:
-// customer_order_review_id_generator
 // ======================================================
 
 async function generateCustomerOrderReviewId(connection) {
@@ -27,7 +21,6 @@ async function generateCustomerOrderReviewId(connection) {
 // Allowed folder:
 // backend/private_uploads/customer/payment-receipts
 //
-// IMPORTANT:
 // Never expose private_uploads using express.static().
 // ======================================================
 
@@ -41,8 +34,6 @@ function getReceiptUploadDirectory() {
   );
 }
 
-// Resolve a stored receipt path and ensure it is inside
-// the exact private payment receipt folder.
 function getPrivateReceiptFile(receiptPath) {
   if (typeof receiptPath !== "string" || !receiptPath.trim()) {
     return null;
@@ -87,7 +78,6 @@ function getPrivateReceiptFile(receiptPath) {
 
   const relativePath = path.relative(uploadDirectory, filePath);
 
-  // Prevent path traversal and access outside the receipt folder.
   if (
     !relativePath ||
     relativePath === ".." ||
@@ -100,8 +90,6 @@ function getPrivateReceiptFile(receiptPath) {
   return filePath;
 }
 
-// Verify the actual file location using realpath.
-// This also protects against symbolic-link escapes.
 async function getVerifiedPrivateReceiptFile(receiptPath) {
   const filePath = getPrivateReceiptFile(receiptPath);
 
@@ -147,8 +135,6 @@ async function getVerifiedPrivateReceiptFile(receiptPath) {
   }
 }
 
-// Delete a receipt only when it is verified inside
-// the exact private receipt folder.
 async function deletePrivateReceiptFile(receiptPath) {
   const verifiedFilePath =
     await getVerifiedPrivateReceiptFile(receiptPath);
@@ -168,7 +154,7 @@ async function deletePrivateReceiptFile(receiptPath) {
 
 // ======================================================
 // GET /api/worker-orders
-// Get recent Pending and Confirmed orders.
+// Get Pending, Confirmed and Rejected orders.
 // ======================================================
 
 const getWorkerOrders = async (req, res) => {
@@ -206,11 +192,16 @@ const getWorkerOrders = async (req, res) => {
           ON cp.id = co.customer_id
        LEFT JOIN customer_payments pay
           ON pay.order_id = co.id
-       WHERE co.order_status IN ('Pending', 'Confirmed')
+       WHERE co.order_status IN (
+          'Pending',
+          'Confirmed',
+          'Rejected'
+       )
        ORDER BY
          CASE
            WHEN co.order_status = 'Pending' THEN 0
-           ELSE 1
+           WHEN co.order_status = 'Confirmed' THEN 1
+           ELSE 2
          END,
          co.created_at DESC`
     );
@@ -346,7 +337,6 @@ const getWorkerOrderDetails = async (req, res) => {
 
 // ======================================================
 // GET /api/worker-orders/:orderId/receipt
-//
 // Securely display a customer's payment receipt.
 // ======================================================
 
@@ -379,10 +369,8 @@ const getWorkerOrderReceipt = async (req, res) => {
       });
     }
 
-    const receiptPath = payments[0].receipt_path;
-
     const verifiedFilePath =
-      await getVerifiedPrivateReceiptFile(receiptPath);
+      await getVerifiedPrivateReceiptFile(payments[0].receipt_path);
 
     if (!verifiedFilePath) {
       return res.status(404).json({
@@ -450,14 +438,7 @@ const getWorkerOrderReceipt = async (req, res) => {
 
 // ======================================================
 // POST /api/worker-orders/:orderId/approve
-//
-// One transaction:
-// 1. Verify worker payment confirmation.
-// 2. Check stock.
-// 3. Deduct stock.
-// 4. Confirm order.
-// 5. Approve payment.
-// 6. Record worker review with generated ID.
+// Approve payment, deduct stock and confirm order.
 // ======================================================
 
 const approveOrder = async (req, res) => {
@@ -500,7 +481,6 @@ const approveOrder = async (req, res) => {
     connection = await db.getConnection();
     await connection.beginTransaction();
 
-    // Lock order.
     const [orders] = await connection.query(
       `SELECT id, order_status, payment_method
        FROM customer_orders
@@ -530,7 +510,6 @@ const approveOrder = async (req, res) => {
       });
     }
 
-    // Lock payment record.
     const [payments] = await connection.query(
       `SELECT
           id,
@@ -573,8 +552,6 @@ const approveOrder = async (req, res) => {
     const isCashOnDelivery =
       /cash\s*on\s*delivery/i.test(paymentMethod);
 
-    // Electronic payments must have a receipt.
-    // Cash on Delivery does not require a receipt.
     if (!isCashOnDelivery && !payment.receipt_path) {
       await connection.rollback();
 
@@ -585,7 +562,6 @@ const approveOrder = async (req, res) => {
       });
     }
 
-    // Load order items.
     const [items] = await connection.query(
       `SELECT product_id, product_name, quantity
        FROM customer_order_items
@@ -603,8 +579,6 @@ const approveOrder = async (req, res) => {
       });
     }
 
-    // Aggregate quantities in case the same product appears
-    // in more than one order-item row.
     const aggregatedItems = new Map();
 
     for (const item of items) {
@@ -627,8 +601,7 @@ const approveOrder = async (req, res) => {
       }
 
       if (aggregatedItems.has(productId)) {
-        const existing = aggregatedItems.get(productId);
-        existing.quantity += quantity;
+        aggregatedItems.get(productId).quantity += quantity;
       } else {
         aggregatedItems.set(productId, {
           product_id: productId,
@@ -639,14 +612,9 @@ const approveOrder = async (req, res) => {
     }
 
     const productItems = Array.from(aggregatedItems.values());
-
-    const productIds = productItems.map(
-      (item) => item.product_id
-    );
-
+    const productIds = productItems.map((item) => item.product_id);
     const placeholders = productIds.map(() => "?").join(",");
 
-    // Lock product rows in ascending order.
     const [products] = await connection.query(
       `SELECT id, name, quantity, quantity_sold, status
        FROM products
@@ -657,13 +625,9 @@ const approveOrder = async (req, res) => {
     );
 
     const productMap = new Map(
-      products.map((product) => [
-        Number(product.id),
-        product,
-      ])
+      products.map((product) => [Number(product.id), product])
     );
 
-    // Check all products before changing any stock.
     for (const item of productItems) {
       const product = productMap.get(item.product_id);
 
@@ -689,7 +653,6 @@ const approveOrder = async (req, res) => {
       }
     }
 
-    // Deduct stock only after every product passes validation.
     for (const item of productItems) {
       const [updateResult] = await connection.query(
         `UPDATE products
@@ -713,7 +676,6 @@ const approveOrder = async (req, res) => {
       }
     }
 
-    // Confirm order.
     await connection.query(
       `UPDATE customer_orders
        SET order_status = 'Confirmed',
@@ -722,7 +684,6 @@ const approveOrder = async (req, res) => {
       [orderId]
     );
 
-    // Approve payment and record who verified it.
     const [paymentUpdate] = await connection.query(
       `UPDATE customer_payments
        SET payment_status = 'Approved',
@@ -739,7 +700,6 @@ const approveOrder = async (req, res) => {
       throw new Error("Payment approval could not be saved.");
     }
 
-    // Generate review ID and record worker approval.
     const reviewId =
       await generateCustomerOrderReviewId(connection);
 
@@ -874,7 +834,6 @@ const rejectOrder = async (req, res) => {
       [orderId]
     );
 
-    // Generate review ID and record worker rejection.
     const reviewId =
       await generateCustomerOrderReviewId(connection);
 
@@ -1015,15 +974,13 @@ const deleteRejectedOrder = async (req, res) => {
 
   let connection;
   let receiptPaths = [];
-  let customerId = null;
-  let orderNumber = null;
 
   try {
     connection = await db.getConnection();
     await connection.beginTransaction();
 
     const [orders] = await connection.query(
-      `SELECT id, order_number, customer_id, order_status
+      `SELECT id, order_number, order_status
        FROM customer_orders
        WHERE id = ?
        FOR UPDATE`,
@@ -1050,10 +1007,7 @@ const deleteRejectedOrder = async (req, res) => {
       });
     }
 
-    customerId = order.customer_id;
-    orderNumber = order.order_number;
-
-    // Save all receipt paths before deleting payment records.
+    // Save receipt paths before deleting payment records.
     const [payments] = await connection.query(
       `SELECT receipt_path
        FROM customer_payments
@@ -1066,14 +1020,16 @@ const deleteRejectedOrder = async (req, res) => {
       .map((payment) => payment.receipt_path)
       .filter(Boolean);
 
-    // Delete payment first because its FK uses ON DELETE RESTRICT.
+    // Delete payment records first.
     await connection.query(
       `DELETE FROM customer_payments
        WHERE order_id = ?`,
       [orderId]
     );
 
-    // Delete the order. Items and reviews use ON DELETE CASCADE.
+    // Delete the rejected order.
+    // Related order items and reviews must either cascade
+    // or be explicitly deleted before this query.
     const [deleteResult] = await connection.query(
       `DELETE FROM customer_orders
        WHERE id = ?
@@ -1085,20 +1041,6 @@ const deleteRejectedOrder = async (req, res) => {
       throw new Error("Rejected order could not be deleted.");
     }
 
-    // Delete customer profile only if no other orders use it.
-    if (customerId) {
-      await connection.query(
-        `DELETE FROM customer_profiles
-         WHERE id = ?
-           AND NOT EXISTS (
-             SELECT 1
-             FROM customer_orders
-             WHERE customer_orders.customer_id = ?
-           )`,
-        [customerId, customerId]
-      );
-    }
-
     await connection.commit();
 
     // Delete receipt files only after DB commit succeeds.
@@ -1108,10 +1050,9 @@ const deleteRejectedOrder = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message:
-        "Rejected order and its related records deleted successfully.",
+      message: "Rejected order deleted successfully.",
       orderId,
-      orderNumber,
+      orderNumber: order.order_number,
     });
   } catch (error) {
     if (connection) {
