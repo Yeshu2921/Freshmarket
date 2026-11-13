@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -52,8 +51,8 @@ function getProfileImage(imagePath) {
   return `${API_ORIGIN}/${image.replace(/^\/+/, "")}`;
 }
 
-// Only these message types can contain attachments.
-function hasAttachment(message) {
+// Only image, audio, and video messages can load attachments.
+function hasValidAttachment(message) {
   return (
     ["image", "audio", "video"].includes(message.message_type) &&
     Boolean(message.attachment_url) &&
@@ -61,7 +60,7 @@ function hasAttachment(message) {
   );
 }
 
-// Remove deleted and unfinished placeholder messages.
+// Remove deleted and temporary placeholder messages.
 function cleanMessages(messages) {
   return (messages || []).filter((message) => {
     if (message.deleted_for_everyone_at) {
@@ -81,7 +80,7 @@ function cleanMessages(messages) {
 
     if (
       text === "loading attachment..." &&
-      !hasAttachment(message)
+      !hasValidAttachment(message)
     ) {
       return false;
     }
@@ -168,7 +167,7 @@ function Messages({ currentUser }) {
 
   const loadConversationMessages = useCallback(
     async (id) => {
-      if (!id) return [];
+      if (!id) return;
 
       try {
         const result = await getMessages(id);
@@ -296,12 +295,11 @@ function Messages({ currentUser }) {
     let active = true;
 
     async function loadFiles() {
-      // Only real image, audio, and video messages
-      // are allowed to request an attachment.
+      // Only messages with a real supported attachment are included.
+      const validMessages = messages.filter(hasValidAttachment);
+
       const validMessageIds = new Set(
-        messages
-          .filter(hasAttachment)
-          .map((message) => String(message.id))
+        validMessages.map((message) => String(message.id))
       );
 
       // Remove URLs for messages no longer displayed.
@@ -327,14 +325,11 @@ function Messages({ currentUser }) {
         return updated;
       });
 
-      // Download only valid attachments.
-      for (const message of messages) {
+      // Load only valid attachment messages.
+      for (const message of validMessages) {
         const messageId = String(message.id);
 
-        if (
-          !hasAttachment(message) ||
-          attachmentUrlsRef.current[messageId]
-        ) {
+        if (attachmentUrlsRef.current[messageId]) {
           continue;
         }
 
@@ -342,12 +337,6 @@ function Messages({ currentUser }) {
           const url = await loadAttachment(message.id);
 
           if (!active) {
-            URL.revokeObjectURL(url);
-            continue;
-          }
-
-          // Prevent duplicate URL creation.
-          if (attachmentUrlsRef.current[messageId]) {
             URL.revokeObjectURL(url);
             continue;
           }
