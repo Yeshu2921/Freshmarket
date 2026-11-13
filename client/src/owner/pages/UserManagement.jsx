@@ -36,6 +36,7 @@ function normalizeUser(user) {
     address: user.address || "",
     sex: user.sex || "",
     role: user.role || "worker",
+    profile_image: user.profile_image || null,
     status:
       user.is_active === true ||
       user.is_active === 1 ||
@@ -44,11 +45,24 @@ function normalizeUser(user) {
         : "Inactive",
   };
 }
-
 function getErrorMessage(error, fallback) {
   return error?.message || fallback;
 }
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://freshmart-backend-70sy.onrender.com/api";
 
+const BACKEND_URL = API_BASE_URL.replace(/\/api\/?$/, "");
+
+function getProfileImageUrl(image) {
+  if (!image) return null;
+
+  if (/^https?:\/\//i.test(image)) {
+    return image;
+  }
+
+  return `${BACKEND_URL}/${image.replace(/^\/+/, "")}`;
+}
 function UserManagement() {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
@@ -753,10 +767,20 @@ function UserManagement() {
                       <td>
                         <div className="um-user-cell">
                           <div
-                            className={`um-avatar ${user.role === "owner" ? "owner-avatar" : ""}`}
-                          >
-                            {user.name.charAt(0).toUpperCase()}
-                          </div>
+  className={`um-avatar ${user.role === "owner" ? "owner-avatar" : ""}`}
+>
+  {user.profile_image ? (
+    <img
+      src={getProfileImageUrl(user.profile_image)}
+      alt={`${user.name}'s profile`}
+      onError={(event) => {
+        event.currentTarget.style.display = "none";
+      }}
+    />
+  ) : (
+    user.name.charAt(0).toUpperCase()
+  )}
+</div>
                           <div className="um-user-details">
                             <strong>{user.name}</strong>
                             <span>{user.email}</span>
