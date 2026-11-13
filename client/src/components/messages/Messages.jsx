@@ -52,6 +52,35 @@ function getProfileImage(imagePath) {
   return `${API_ORIGIN}/${image.replace(/^\/+/, "")}`;
 }
 
+// Remove deleted and temporary placeholder messages.
+function cleanMessages(messages) {
+  return (messages || []).filter((message) => {
+    if (message.deleted_for_everyone_at) {
+      return false;
+    }
+
+    const text = String(message.message_text || "")
+      .trim()
+      .toLowerCase();
+
+    if (
+      text === "this message was deleted" ||
+      text === "this message was deleted."
+    ) {
+      return false;
+    }
+
+    if (
+      text === "loading attachment..." &&
+      !message.attachment_url
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 // =============================================
 // MESSAGES COMPONENT
 // =============================================
@@ -70,7 +99,6 @@ function Messages({ currentUser }) {
 
   const attachmentUrlsRef = useRef({});
   const conversationIdRef = useRef(null);
-
   const currentUserId = Number(currentUser?.id);
 
   // ------------------------------------------
@@ -81,9 +109,11 @@ function Messages({ currentUser }) {
     try {
       const result = await getContacts();
 
-      setContacts(result.contacts || []);
+      const updatedContacts = result.contacts || [];
 
-      return result.contacts || [];
+      setContacts(updatedContacts);
+
+      return updatedContacts;
     } catch (err) {
       console.error("Load contacts error:", err);
 
@@ -102,6 +132,7 @@ function Messages({ currentUser }) {
 
     async function initialize() {
       setLoading(true);
+      setError("");
 
       try {
         await loadContacts();
@@ -132,14 +163,20 @@ function Messages({ currentUser }) {
       try {
         const result = await getMessages(id);
 
-        setMessages(result.messages || []);
+        const clean = cleanMessages(result.messages);
 
-        // Refresh unread counts after opening the conversation.
+        setMessages(clean);
+
+        // Refresh unread counts.
         await loadContacts();
+
+        return clean;
       } catch (err) {
         console.error("Load messages error:", err);
 
         setError(err.message || "Unable to load messages.");
+
+        return [];
       }
     },
     [loadContacts]
@@ -173,6 +210,7 @@ function Messages({ currentUser }) {
       }
 
       conversationIdRef.current = id;
+
       setConversationId(id);
 
       await loadConversationMessages(id);
@@ -248,6 +286,39 @@ function Messages({ currentUser }) {
     let active = true;
 
     async function loadFiles() {
+      const validMessageIds = new Set(
+        messages
+          .filter(
+            (message) =>
+              message.attachment_url &&
+              !message.deleted_for_everyone_at
+          )
+          .map((message) => String(message.id))
+      );
+
+      // Remove URLs for messages no longer displayed.
+      Object.entries(attachmentUrlsRef.current).forEach(
+        ([messageId, url]) => {
+          if (!validMessageIds.has(messageId)) {
+            URL.revokeObjectURL(url);
+
+            delete attachmentUrlsRef.current[messageId];
+          }
+        }
+      );
+
+      setAttachmentUrls((previous) => {
+        const updated = {};
+
+        Object.entries(previous).forEach(([messageId, url]) => {
+          if (validMessageIds.has(messageId)) {
+            updated[messageId] = url;
+          }
+        });
+
+        return updated;
+      });
+
       for (const message of messages) {
         const messageId = String(message.id);
 
@@ -274,7 +345,10 @@ function Messages({ currentUser }) {
             [messageId]: url,
           }));
         } catch (err) {
-          console.error("Attachment loading error:", err);
+          console.error(
+            `Attachment loading error (${messageId}):`,
+            err
+          );
         }
       }
     }
@@ -286,12 +360,15 @@ function Messages({ currentUser }) {
     };
   }, [messages]);
 
-  // Revoke private attachment URLs when leaving Messages.
+  // ------------------------------------------
+  // CLEAN UP PRIVATE ATTACHMENTS
+  // ------------------------------------------
+
   useEffect(() => {
     return () => {
-      Object.values(attachmentUrlsRef.current).forEach((url) => {
-        URL.revokeObjectURL(url);
-      });
+      Object.values(attachmentUrlsRef.current).forEach(
+        (url) => URL.revokeObjectURL(url)
+      );
 
       attachmentUrlsRef.current = {};
     };
@@ -313,6 +390,7 @@ function Messages({ currentUser }) {
       await sendMessage(conversationId, text, file);
 
       await loadConversationMessages(conversationId);
+
       await loadContacts();
 
       return true;
@@ -379,6 +457,7 @@ function Messages({ currentUser }) {
       }
 
       await loadConversationMessages(conversationId);
+
       await loadContacts();
     } catch (err) {
       console.error("Delete message error:", err);
