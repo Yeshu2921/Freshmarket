@@ -185,27 +185,36 @@ export async function deleteForMe(messageId) {
 // 8. LOAD PRIVATE ATTACHMENT
 // =============================================
 
+
 export async function loadAttachment(messageId) {
   const response = await fetch(
     `${API_BASE}/messages/messages/${messageId}/attachment`,
     {
       method: "GET",
       headers: getHeaders(),
+      cache: "no-store",
     }
   );
 
   if (!response.ok) {
-    let message = "Unable to load this attachment.";
+    let errorMessage = "Unable to load this attachment.";
 
     try {
       const data = await response.json();
-      message = data.message || message;
+      errorMessage = data.message || errorMessage;
     } catch {
-      // Keep the default message if the response isn't JSON.
+      // Keep the default error message.
     }
 
-    throw new Error(message);
+    throw new Error(errorMessage);
   }
 
-  return URL.createObjectURL(await response.blob());
+  const blob = await response.blob();
+
+  if (!blob.size) {
+    throw new Error("The attachment file is empty.");
+  }
+
+  return URL.createObjectURL(blob);
 }
+
