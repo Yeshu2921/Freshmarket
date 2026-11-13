@@ -461,7 +461,7 @@ function Contact() {
           </p>
 
           <Link
-            to="/all-products"
+            to="/market"
             className="btn fm-contact-main-btn"
           >
             Start Shopping
