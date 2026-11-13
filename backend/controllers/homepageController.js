@@ -1,6 +1,11 @@
+
 const db = require("../db");
 const fs = require("fs");
 const path = require("path");
+
+// =====================================================
+// HOMEPAGE IMAGE DIRECTORY
+// =====================================================
 
 const uploadDirectory = path.join(
   __dirname,
@@ -10,16 +15,31 @@ const uploadDirectory = path.join(
   "homepage"
 );
 
-const getImagePath = (filename) => `images/homepage/${filename}`;
+const getImagePath = (filename) =>
+  `images/homepage/${filename}`;
 
-// Safely delete only files inside the homepage upload directory.
+// =====================================================
+// SHARED ID GENERATOR
+// =====================================================
+
+const generateNextId = async (connection) => {
+  const [result] = await connection.query(
+    "INSERT INTO user_id_generator () VALUES ()"
+  );
+
+  return Number(result.insertId);
+};
+
+// =====================================================
+// SAFE IMAGE FILE DELETION
+// =====================================================
+
 const deleteImageFile = async (imagePath) => {
   if (!imagePath) return;
 
   const value = String(imagePath);
   const filename = path.basename(value);
 
-  // Accept either the uploaded filename or the stored relative image path.
   if (
     value !== filename &&
     value !== getImagePath(filename)
@@ -43,7 +63,11 @@ const deleteImageFile = async (imagePath) => {
   }
 };
 
+// =====================================================
+// GET HOMEPAGE BANNER
 // GET /api/homepage/banner
+// =====================================================
+
 const getBanner = async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -68,12 +92,15 @@ const getBanner = async (req, res) => {
   }
 };
 
+// =====================================================
+// UPDATE HOMEPAGE BANNER
 // POST /api/homepage/banner
+// =====================================================
+
 const updateBanner = async (req, res) => {
   let connection;
   let transactionStarted = false;
   let committed = false;
-  let newFileSaved = false;
   let oldImagePath = null;
 
   try {
@@ -84,9 +111,8 @@ const updateBanner = async (req, res) => {
       });
     }
 
-    newFileSaved = true;
-
     connection = await db.getConnection();
+
     await connection.beginTransaction();
     transactionStarted = true;
 
@@ -113,18 +139,19 @@ const updateBanner = async (req, res) => {
         [newPath, rows[0].id]
       );
     } else {
+      const bannerId = await generateNextId(connection);
+
       await connection.query(
         `INSERT INTO homepage_posts
-         (image_type, image_name, image_path)
-         VALUES ('banner', 'bannerimage', ?)`,
-        [newPath]
+         (id, image_type, image_name, image_path)
+         VALUES (?, 'banner', 'bannerimage', ?)`,
+        [bannerId, newPath]
       );
     }
 
     await connection.commit();
     committed = true;
 
-    // Old image cleanup must not undo a successful database update.
     if (oldImagePath) {
       try {
         await deleteImageFile(oldImagePath);
@@ -150,7 +177,7 @@ const updateBanner = async (req, res) => {
       }
     }
 
-    if (newFileSaved && req.file && !committed) {
+    if (req.file && !committed) {
       try {
         await deleteImageFile(req.file.filename);
       } catch (cleanupError) {
@@ -169,7 +196,11 @@ const updateBanner = async (req, res) => {
   }
 };
 
+// =====================================================
+// GET WEBSITE LOGO
 // GET /api/homepage/logo
+// =====================================================
+
 const getLogo = async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -194,12 +225,15 @@ const getLogo = async (req, res) => {
   }
 };
 
+// =====================================================
+// UPDATE WEBSITE LOGO
 // POST /api/homepage/logo
+// =====================================================
+
 const updateLogo = async (req, res) => {
   let connection;
   let transactionStarted = false;
   let committed = false;
-  let newFileSaved = false;
   let oldImagePath = null;
 
   try {
@@ -212,7 +246,8 @@ const updateLogo = async (req, res) => {
 
       return res.status(400).json({
         success: false,
-        message: "Logo name is required and must be 180 characters or fewer.",
+        message:
+          "Logo name is required and must be 180 characters or fewer.",
       });
     }
 
@@ -223,9 +258,8 @@ const updateLogo = async (req, res) => {
       });
     }
 
-    newFileSaved = true;
-
     connection = await db.getConnection();
+
     await connection.beginTransaction();
     transactionStarted = true;
 
@@ -252,11 +286,13 @@ const updateLogo = async (req, res) => {
         [imageName, newPath, rows[0].id]
       );
     } else {
+      const logoId = await generateNextId(connection);
+
       await connection.query(
         `INSERT INTO homepage_posts
-         (image_type, image_name, image_path)
-         VALUES ('logo', ?, ?)`,
-        [imageName, newPath]
+         (id, image_type, image_name, image_path)
+         VALUES (?, 'logo', ?, ?)`,
+        [logoId, imageName, newPath]
       );
     }
 
@@ -288,7 +324,7 @@ const updateLogo = async (req, res) => {
       }
     }
 
-    if (newFileSaved && req.file && !committed) {
+    if (req.file && !committed) {
       try {
         await deleteImageFile(req.file.filename);
       } catch (cleanupError) {
@@ -307,7 +343,11 @@ const updateLogo = async (req, res) => {
   }
 };
 
+// =====================================================
+// GET HOMEPAGE GALLERY POSTS
 // GET /api/homepage/posts
+// =====================================================
+
 const getHomepagePosts = async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -332,13 +372,23 @@ const getHomepagePosts = async (req, res) => {
   }
 };
 
+// =====================================================
+// CREATE HOMEPAGE GALLERY POST
 // POST /api/homepage/posts
+// =====================================================
+
 const createHomepagePost = async (req, res) => {
+  let connection;
+  let transactionStarted = false;
+  let committed = false;
+
   try {
     const imageName = String(req.body.image_name || "").trim();
 
     if (!imageName) {
-      if (req.file) await deleteImageFile(req.file.filename);
+      if (req.file) {
+        await deleteImageFile(req.file.filename);
+      }
 
       return res.status(400).json({
         success: false,
@@ -346,8 +396,21 @@ const createHomepagePost = async (req, res) => {
       });
     }
 
+    if (imageName.length > 180) {
+      if (req.file) {
+        await deleteImageFile(req.file.filename);
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: "Image name must not exceed 180 characters.",
+      });
+    }
+
     if (imageName.toLowerCase() === "bannerimage") {
-      if (req.file) await deleteImageFile(req.file.filename);
+      if (req.file) {
+        await deleteImageFile(req.file.filename);
+      }
 
       return res.status(400).json({
         success: false,
@@ -364,24 +427,43 @@ const createHomepagePost = async (req, res) => {
 
     const imagePath = getImagePath(req.file.filename);
 
-    const [result] = await db.query(
+    connection = await db.getConnection();
+
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    const postId = await generateNextId(connection);
+
+    await connection.query(
       `INSERT INTO homepage_posts
-       (image_type, image_name, image_path)
-       VALUES ('gallery', ?, ?)`,
-      [imageName, imagePath]
+       (id, image_type, image_name, image_path)
+       VALUES (?, 'gallery', ?, ?)`,
+      [postId, imageName, imagePath]
     );
+
+    await connection.commit();
+    committed = true;
 
     return res.status(201).json({
       success: true,
       message: "Homepage image posted successfully.",
       post: {
-        id: result.insertId,
+        id: postId,
         image_name: imageName,
         image_path: imagePath,
+        posted_at: new Date(),
       },
     });
   } catch (error) {
-    if (req.file) {
+    if (connection && transactionStarted && !committed) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error("Gallery rollback error:", rollbackError);
+      }
+    }
+
+    if (req.file && !committed) {
       try {
         await deleteImageFile(req.file.filename);
       } catch (cleanupError) {
@@ -395,11 +477,21 @@ const createHomepagePost = async (req, res) => {
       success: false,
       message: "Unable to post homepage image.",
     });
+  } finally {
+    if (connection) connection.release();
   }
 };
 
+// =====================================================
+// DELETE HOMEPAGE GALLERY POST
 // DELETE /api/homepage/posts/:id
+// =====================================================
+
 const deleteHomepagePost = async (req, res) => {
+  let connection;
+  let transactionStarted = false;
+  let committed = false;
+
   try {
     const postId = Number(req.params.id);
 
@@ -410,53 +502,89 @@ const deleteHomepagePost = async (req, res) => {
       });
     }
 
-    const [rows] = await db.query(
+    connection = await db.getConnection();
+
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    const [rows] = await connection.query(
       `SELECT id, image_type, image_name, image_path
        FROM homepage_posts
-       WHERE id = ?`,
+       WHERE id = ?
+       FOR UPDATE`,
       [postId]
     );
 
     if (!rows.length) {
+      await connection.rollback();
+      transactionStarted = false;
+
       return res.status(404).json({
         success: false,
         message: "Homepage image not found.",
       });
     }
 
+    const post = rows[0];
+
     if (
-      rows[0].image_type === "logo" ||
-      rows[0].image_type === "banner" ||
-      rows[0].image_name === "bannerimage"
+      post.image_type === "logo" ||
+      post.image_type === "banner" ||
+      post.image_name === "bannerimage"
     ) {
+      await connection.rollback();
+      transactionStarted = false;
+
       return res.status(403).json({
         success: false,
-        message: "Banner and logo images cannot be deleted from the gallery.",
+        message:
+          "Banner and logo images cannot be deleted from the gallery.",
       });
     }
 
-    await db.query(
+    await connection.query(
       "DELETE FROM homepage_posts WHERE id = ?",
       [postId]
     );
 
-    await deleteImageFile(rows[0].image_path);
+    await connection.commit();
+    committed = true;
+
+    try {
+      await deleteImageFile(post.image_path);
+    } catch (cleanupError) {
+      console.error("Gallery image file cleanup error:", cleanupError);
+    }
 
     return res.json({
       success: true,
       message: "Homepage image permanently deleted.",
     });
   } catch (error) {
+    if (connection && transactionStarted && !committed) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error("Delete gallery rollback error:", rollbackError);
+      }
+    }
+
     console.error("Delete homepage post error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Unable to delete homepage image.",
     });
+  } finally {
+    if (connection) connection.release();
   }
 };
+
+// =====================================================
+// GET PAYMENT METHODS
 // GET /api/payment-methods
-// Public: customers can see active payment methods.
+// =====================================================
+
 const getPaymentMethods = async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -482,9 +610,16 @@ const getPaymentMethods = async (req, res) => {
   }
 };
 
+// =====================================================
+// CREATE PAYMENT METHOD
 // POST /api/payment-methods
-// Owner only: create a payment method.
+// =====================================================
+
 const createPaymentMethod = async (req, res) => {
+  let connection;
+  let transactionStarted = false;
+  let committed = false;
+
   try {
     const {
       method_name,
@@ -522,11 +657,25 @@ const createPaymentMethod = async (req, res) => {
       });
     }
 
-    const [result] = await db.query(
+    connection = await db.getConnection();
+
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    const paymentMethodId = await generateNextId(connection);
+
+    await connection.query(
       `INSERT INTO payment_methods
-       (method_name, receiver_name, account_number, account_type)
-       VALUES (?, ?, ?, ?)`,
+       (
+         id,
+         method_name,
+         receiver_name,
+         account_number,
+         account_type
+       )
+       VALUES (?, ?, ?, ?, ?)`,
       [
+        paymentMethodId,
         methodName,
         receiverName,
         accountNumber,
@@ -534,30 +683,49 @@ const createPaymentMethod = async (req, res) => {
       ]
     );
 
+    await connection.commit();
+    committed = true;
+
     return res.status(201).json({
       success: true,
       message: "Payment method created successfully.",
       paymentMethod: {
-        id: result.insertId,
+        id: paymentMethodId,
         method_name: methodName,
         receiver_name: receiverName,
         account_number: accountNumber,
         account_type: accountType,
-        is_active: true,
+        is_active: 1,
       },
     });
   } catch (error) {
+    if (connection && transactionStarted && !committed) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error(
+          "Payment method rollback error:",
+          rollbackError
+        );
+      }
+    }
+
     console.error("Create payment method error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Unable to create payment method.",
     });
+  } finally {
+    if (connection) connection.release();
   }
 };
 
+// =====================================================
+// UPDATE PAYMENT METHOD
 // PUT /api/payment-methods/:id
-// Owner only: update a payment method.
+// =====================================================
+
 const updatePaymentMethod = async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -642,8 +810,11 @@ const updatePaymentMethod = async (req, res) => {
   }
 };
 
+// =====================================================
+// DELETE PAYMENT METHOD
 // DELETE /api/payment-methods/:id
-// Owner only: permanently delete a payment method.
+// =====================================================
+
 const deletePaymentMethod = async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -680,16 +851,22 @@ const deletePaymentMethod = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// EXPORT ALL CONTROLLERS
+// =====================================================
+
 module.exports = {
   getBanner,
   updateBanner,
+
   getLogo,
   updateLogo,
+
   getHomepagePosts,
   createHomepagePost,
   deleteHomepagePost,
 
-  // Payment methods
   getPaymentMethods,
   createPaymentMethod,
   updatePaymentMethod,
