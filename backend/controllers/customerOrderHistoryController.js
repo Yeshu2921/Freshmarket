@@ -2,7 +2,10 @@
 const db = require("../db");
 const bcrypt = require("bcryptjs");
 
-// Verify customer and retrieve their complete order history
+// =============================================
+// VERIFY CUSTOMER AND RETRIEVE ORDER HISTORY
+// =============================================
+
 const getCustomerOrderHistory = async (req, res) => {
   try {
     const { phone, pin } = req.body || {};
@@ -19,13 +22,19 @@ const getCustomerOrderHistory = async (req, res) => {
     }
 
     // 2. Find ALL customer profiles with this phone number
-  const [customers] = await db.query(
-  `SELECT id, full_name, phone, pin_hash
-   FROM customer_profiles
-   WHERE REPLACE(phone, ' ', '') = ?
-   ORDER BY id ASC`,
-  [cleanPhone]
-);
+    const [customers] = await db.query(
+      `
+      SELECT
+        id,
+        full_name,
+        phone,
+        pin_hash
+      FROM customer_profiles
+      WHERE REPLACE(phone, ' ', '') = ?
+      ORDER BY id ASC
+      `,
+      [cleanPhone]
+    );
 
     if (customers.length === 0) {
       return res.status(401).json({
@@ -59,38 +68,47 @@ const getCustomerOrderHistory = async (req, res) => {
         message: "Invalid phone number or PIN.",
       });
     }
-  
-    // 4. Retrieve orders belonging ONLY to the matched profile.
-    // The subquery selects the latest payment for each order,
-    // preventing duplicate orders if multiple payment rows exist.
+
+    // 4. Retrieve orders and their latest payment.
+    // TiDB-compatible approach:
+    // Find the maximum payment ID per order in a derived table.
+    // No correlated subquery inside the JOIN condition.
+
     const [orders] = await db.query(
-      `SELECT
-          o.id,
-          o.order_number,
-          o.delivery_location,
-          o.payment_method,
-          o.subtotal,
-          o.delivery_fee,
-          o.grand_total,
-          o.order_status,
-          o.created_at,
+      `
+      SELECT
+        o.id,
+        o.order_number,
+        o.delivery_location,
+        o.payment_method,
+        o.subtotal,
+        o.delivery_fee,
+        o.grand_total,
+        o.order_status,
+        o.created_at,
 
-          p.payment_status,
-          p.rejection_reason AS payment_rejection_reason,
-          p.transaction_reference
+        p.payment_status,
+        p.rejection_reason AS payment_rejection_reason,
+        p.transaction_reference
 
-       FROM customer_orders o
+      FROM customer_orders o
 
-       LEFT JOIN customer_payments p
-          ON p.id = (
-            SELECT MAX(p2.id)
-            FROM customer_payments p2
-            WHERE p2.order_id = o.id
-          )
+      LEFT JOIN (
+        SELECT
+          cp.order_id,
+          MAX(cp.id) AS latest_payment_id
+        FROM customer_payments cp
+        GROUP BY cp.order_id
+      ) latest_payment
+        ON latest_payment.order_id = o.id
 
-       WHERE o.customer_id = ?
+      LEFT JOIN customer_payments p
+        ON p.id = latest_payment.latest_payment_id
 
-       ORDER BY o.created_at DESC`,
+      WHERE o.customer_id = ?
+
+      ORDER BY o.created_at DESC, o.id DESC
+      `,
       [matchedCustomer.id]
     );
 
@@ -103,18 +121,20 @@ const getCustomerOrderHistory = async (req, res) => {
       const placeholders = orderIds.map(() => "?").join(",");
 
       const [orderItems] = await db.query(
-        `SELECT
-            id,
-            order_id,
-            product_id,
-            product_name,
-            product_image,
-            unit_price,
-            quantity,
-            line_total
-         FROM customer_order_items
-         WHERE order_id IN (${placeholders})
-         ORDER BY id ASC`,
+        `
+        SELECT
+          id,
+          order_id,
+          product_id,
+          product_name,
+          product_image,
+          unit_price,
+          quantity,
+          line_total
+        FROM customer_order_items
+        WHERE order_id IN (${placeholders})
+        ORDER BY id ASC
+        `,
         orderIds
       );
 
@@ -152,6 +172,10 @@ const getCustomerOrderHistory = async (req, res) => {
     });
   }
 };
+
+// =============================================
+// EXPORTS
+// =============================================
 
 module.exports = {
   getCustomerOrderHistory,
