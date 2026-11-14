@@ -505,3 +505,27 @@
     transition: none;
   }
 }
+
+.cart-product-brand {
+  display: block;
+  color: #198754;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 5px 0;
+}
+
+.cart-product-description {
+  color: #6c757d;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 5px 0 12px;
+  overflow-wrap: anywhere;
+}
+
+.cart-product-details {
+  min-width: 0;
+}
+
+.cart-product-details h3 {
+  overflow-wrap: anywhere;
+}
