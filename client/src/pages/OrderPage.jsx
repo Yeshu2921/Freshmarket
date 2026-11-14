@@ -148,15 +148,49 @@ function getProductPrice(item) {
   return Number.isFinite(price) && price >= 0 ? price : 0;
 }
 
+
 function getProductImage(item) {
-  const image =
+  // First, check individual image fields.
+  let image =
     item.image ??
     item.imageUrl ??
     item.image_url ??
     item.image_path ??
     item.product_image ??
     item.product?.image_path ??
+    item.product?.product_image ??
     "";
+
+  // If there is no individual image, check image arrays.
+  if (!image) {
+    const imageArrays = [
+      item.images,
+      item.product_images,
+      item.selectedImages,
+      item.selected_images,
+      item.galleryImages,
+      item.gallery_images,
+      item.product?.images,
+      item.product?.product_images,
+    ];
+
+    for (const images of imageArrays) {
+      if (Array.isArray(images) && images.length > 0) {
+        image = images[0];
+        break;
+      }
+    }
+  }
+
+  // Support image objects as well as strings.
+  if (image && typeof image === "object") {
+    image =
+      image.image_path ??
+      image.image ??
+      image.url ??
+      image.imageUrl ??
+      "";
+  }
 
   if (typeof image !== "string" || !image.trim()) {
     return "";
@@ -164,10 +198,12 @@ function getProductImage(item) {
 
   const cleanImage = image.trim();
 
+  // Already an absolute URL.
   if (/^(https?:\/\/|data:|blob:)/i.test(cleanImage)) {
     return cleanImage;
   }
 
+  // Convert a relative path into a complete image URL.
   return `${IMAGE_BASE}/${cleanImage.replace(/^\/+/, "")}`;
 }
 
