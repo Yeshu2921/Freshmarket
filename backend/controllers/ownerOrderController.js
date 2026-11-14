@@ -6,11 +6,6 @@ const bcrypt = require("bcryptjs");
 
 // ======================================================
 // PRIVATE PAYMENT RECEIPT HELPERS
-//
-// Allowed folder:
-// backend/private_uploads/customer/payment-receipts
-//
-// This folder must NOT be exposed using express.static().
 // ======================================================
 
 const backendRoot = path.resolve(__dirname, "..");
@@ -22,8 +17,6 @@ const receiptDirectory = path.resolve(
   "payment-receipts"
 );
 
-// Resolve a saved receipt path and reject paths outside
-// the permitted receipt directory.
 function getPrivateReceiptFile(receiptPath) {
   if (typeof receiptPath !== "string" || !receiptPath.trim()) {
     return null;
@@ -57,7 +50,6 @@ function getPrivateReceiptFile(receiptPath) {
       relativePath !== ".." &&
       !relativePath.includes("/")
     ) {
-      // Also support a filename stored by itself.
       filePath = path.resolve(receiptDirectory, relativePath);
     } else {
       return null;
@@ -66,8 +58,6 @@ function getPrivateReceiptFile(receiptPath) {
 
   const relativePath = path.relative(receiptDirectory, filePath);
 
-  // Reject the directory itself, parent traversal, and
-  // every path outside the allowed folder.
   if (
     !relativePath ||
     relativePath === ".." ||
@@ -80,8 +70,6 @@ function getPrivateReceiptFile(receiptPath) {
   return filePath;
 }
 
-// Resolve the real file path too. This prevents a symlink
-// inside the receipt folder from pointing outside it.
 async function getVerifiedPrivateReceiptFile(receiptPath) {
   const filePath = getPrivateReceiptFile(receiptPath);
 
@@ -123,7 +111,6 @@ async function getVerifiedPrivateReceiptFile(receiptPath) {
   }
 }
 
-// Delete a receipt only when it is inside the allowed folder.
 async function deletePrivateReceiptFile(receiptPath) {
   const filePath = await getVerifiedPrivateReceiptFile(receiptPath);
 
@@ -138,6 +125,46 @@ async function deletePrivateReceiptFile(receiptPath) {
       console.error("Receipt file deletion warning:", error);
     }
   }
+}
+
+// ======================================================
+// NORMALIZE ORDER PRODUCT IMAGES
+// ======================================================
+
+function normalizeOrderItemImages(item) {
+  let productImages = [];
+
+  try {
+    if (Array.isArray(item.product_images)) {
+      productImages = item.product_images;
+    } else if (typeof item.product_images === "string") {
+      productImages = JSON.parse(item.product_images);
+    }
+  } catch (error) {
+    productImages = [];
+  }
+
+  if (!Array.isArray(productImages)) {
+    productImages = [];
+  }
+
+  productImages = [
+    ...new Set(
+      productImages.filter(
+        (image) =>
+          typeof image === "string" && image.trim() !== ""
+      )
+    ),
+  ];
+
+  if (productImages.length === 0 && item.product_image) {
+    productImages = [item.product_image];
+  }
+
+  return {
+    ...item,
+    product_images: productImages,
+  };
 }
 
 // ======================================================
@@ -352,13 +379,14 @@ const getOwnerOrderDetails = async (req, res) => {
 
     const order = orders[0];
 
-    const [items] = await db.query(
+    const [rawItems] = await db.query(
       `SELECT
           id,
           order_id,
           product_id,
           product_name,
           product_image,
+          product_images,
           unit_price,
           quantity,
           line_total
@@ -367,6 +395,8 @@ const getOwnerOrderDetails = async (req, res) => {
        ORDER BY id ASC`,
       [orderId]
     );
+
+    const items = rawItems.map(normalizeOrderItemImages);
 
     const [reviews] = await db.query(
       `SELECT
@@ -404,10 +434,7 @@ const getOwnerOrderDetails = async (req, res) => {
 
 // ======================================================
 // GET /api/owner-orders/:orderId/receipt
-//
 // Securely stream the private payment receipt.
-// The route must be protected by requireAuth and
-// requireOwner in ownerOrderRoutes.js.
 // ======================================================
 
 const getOwnerOrderReceipt = async (req, res) => {
@@ -440,10 +467,10 @@ const getOwnerOrderReceipt = async (req, res) => {
       });
     }
 
-    const receiptPath = payments[0].receipt_path;
-
     const verifiedFilePath =
-      await getVerifiedPrivateReceiptFile(receiptPath);
+      await getVerifiedPrivateReceiptFile(
+        payments[0].receipt_path
+      );
 
     if (!verifiedFilePath) {
       return res.status(404).json({
@@ -452,48 +479,60 @@ const getOwnerOrderReceipt = async (req, res) => {
       });
     }
 
-    // Only allow image receipt types.
     const extension = path.extname(verifiedFilePath).toLowerCase();
 
-    const allowedExtensions = [
-      ".jpg",
-      ".jpeg",
-      ".png",
-      ".webp",
-      ".gif",
-      ".bmp",
-      ".avif",
-    ];
+    const allowedMimeTypes = {
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".png": "image/png",
+      ".webp": "image/webp",
+      ".gif": "image/gif",
+      ".bmp": "image/bmp",
+      ".avif": "image/avif",
+    };
 
-    if (!allowedExtensions.includes(extension)) {
+    const mimeType = allowedMimeTypes[extension];
+
+    if (!mimeType) {
       return res.status(415).json({
         success: false,
         message: "Unsupported receipt image format.",
       });
     }
 
+    res.setHeader("Content-Type", mimeType);
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
 
-    return res.sendFile(verifiedFilePath, (error) => {
-      if (error) {
-        console.error("Send owner receipt error:", error);
+    return res.sendFile(
+      verifiedFilePath,
+      {
+        headers: {
+          "Content-Type": mimeType,
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      },
+      (error) => {
+        if (error && !res.headersSent) {
+          console.error("Send owner receipt error:", error);
 
-        if (!res.headersSent) {
           res.status(500).json({
             success: false,
             message: "Failed to send the payment receipt.",
           });
         }
       }
-    });
+    );
   } catch (error) {
     console.error("Get owner payment receipt error:", error);
 
-    return res.status(500).json({
-      success: false,
-      message: "Failed to load the payment receipt.",
-    });
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to load the payment receipt.",
+      });
+    }
   }
 };
 
@@ -505,8 +544,8 @@ const getOwnerOrderReceipt = async (req, res) => {
 // 2. Has an Approved worker review.
 // 3. Has payment_status = Approved.
 //
-// Related order items and reviews are deleted through
-// their ON DELETE CASCADE foreign keys.
+// Related records are explicitly deleted in this function.
+// No product or product_images lookup is required.
 // ======================================================
 
 const permanentlyDeleteOwnerOrder = async (req, res) => {
@@ -534,7 +573,7 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
     connection = await db.getConnection();
     await connection.beginTransaction();
 
-    // Lock the order while checking and deleting it.
+    // 1. Lock and find the order.
     const [orders] = await connection.query(
       `SELECT
           id,
@@ -568,7 +607,7 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
       });
     }
 
-    // Lock all payment rows for this order.
+    // 2. Lock payment records.
     const [payments] = await connection.query(
       `SELECT
           id,
@@ -594,7 +633,7 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
       });
     }
 
-    // Confirm that a worker approval review exists.
+    // 3. Confirm worker approval review exists.
     const [reviews] = await connection.query(
       `SELECT id
        FROM customer_order_reviews
@@ -614,20 +653,34 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
       });
     }
 
+    // 4. Save receipt paths before deleting payment records.
     receiptPaths = payments
       .map((payment) => payment.receipt_path)
       .filter(Boolean);
 
-    // Delete payments first because their FK uses
-    // ON DELETE RESTRICT.
+    // 5. Delete payment records.
     await connection.query(
       `DELETE FROM customer_payments
        WHERE order_id = ?`,
       [orderId]
     );
 
-    // Delete the order. Its items and reviews are removed
-    // automatically by ON DELETE CASCADE.
+    // 6. Delete review history.
+    await connection.query(
+      `DELETE FROM customer_order_reviews
+       WHERE order_id = ?`,
+      [orderId]
+    );
+
+    // 7. Delete order items.
+    // This does not access products or product_images.
+    await connection.query(
+      `DELETE FROM customer_order_items
+       WHERE order_id = ?`,
+      [orderId]
+    );
+
+    // 8. Delete the order itself.
     const [deleteResult] = await connection.query(
       `DELETE FROM customer_orders
        WHERE id = ?
@@ -639,7 +692,9 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
       throw new Error("The confirmed order could not be deleted.");
     }
 
-    // Delete customer profile only if there are no other orders.
+    // 9. Preserve the existing cleanup behavior:
+    // Delete the customer profile only when no other orders
+    // reference it. Do not delete a profile still in use.
     if (order.customer_id) {
       await connection.query(
         `DELETE FROM customer_profiles
@@ -653,9 +708,10 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
       );
     }
 
+    // 10. Commit database changes.
     await connection.commit();
 
-    // Remove private receipt files only after successful commit.
+    // 11. Delete receipt files only after successful commit.
     for (const receiptPath of receiptPaths) {
       await deletePrivateReceiptFile(receiptPath);
     }
@@ -684,6 +740,10 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to permanently delete the order.",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : undefined,
     });
   } finally {
     if (connection) {
@@ -694,9 +754,6 @@ const permanentlyDeleteOwnerOrder = async (req, res) => {
 
 // ======================================================
 // PATCH /api/owner-orders/:orderId/reset-pin
-//
-// Owner resets the PIN of the customer profile
-// associated with the selected order.
 // ======================================================
 
 const resetCustomerPin = async (req, res) => {
@@ -711,7 +768,6 @@ const resetCustomerPin = async (req, res) => {
     });
   }
 
-  // Validate new PIN.
   if (
     typeof newPin !== "string" ||
     !/^\d{4,6}$/.test(newPin)
@@ -722,7 +778,6 @@ const resetCustomerPin = async (req, res) => {
     });
   }
 
-  // Validate confirmation.
   if (
     typeof confirmPin !== "string" ||
     newPin !== confirmPin
@@ -740,7 +795,6 @@ const resetCustomerPin = async (req, res) => {
 
     await connection.beginTransaction();
 
-    // Find the customer profile associated with this order.
     const [orders] = await connection.query(
       `SELECT customer_id
        FROM customer_orders
@@ -769,7 +823,6 @@ const resetCustomerPin = async (req, res) => {
       });
     }
 
-    // Hash the PIN before saving it.
     const hashedPin = await bcrypt.hash(newPin, 12);
 
     const [updateResult] = await connection.query(
@@ -794,7 +847,6 @@ const resetCustomerPin = async (req, res) => {
       success: true,
       message: "Customer PIN has been reset successfully.",
     });
-
   } catch (error) {
     if (connection) {
       try {
@@ -810,7 +862,6 @@ const resetCustomerPin = async (req, res) => {
       success: false,
       message: "Failed to reset customer PIN.",
     });
-
   } finally {
     if (connection) {
       connection.release();
