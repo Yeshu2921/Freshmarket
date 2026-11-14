@@ -58,6 +58,7 @@ function createOrderNumber() {
 
 // =============================================
 // VALIDATE AND COMBINE ORDER ITEMS
+// PRESERVE SELECTED PRODUCT IMAGES
 // =============================================
 
 function normalizeItems(value) {
@@ -91,20 +92,51 @@ function normalizeItems(value) {
       return null;
     }
 
-    combined.set(
-      productId,
-      (combined.get(productId) || 0) + quantity
-    );
+    let images = [];
+
+    if (Array.isArray(item?.images)) {
+      images = item.images;
+    } else if (typeof item?.image === "string") {
+      images = [item.image];
+    }
+
+    if (
+      images.some(
+        (image) =>
+          typeof image !== "string" ||
+          !image.trim() ||
+          image.length > 500
+      )
+    ) {
+      return null;
+    }
+
+    images = [
+      ...new Set(images.map((image) => image.trim())),
+    ];
+
+    if (!combined.has(productId)) {
+      combined.set(productId, {
+        productId,
+        quantity: 0,
+        images: [],
+      });
+    }
+
+    const existing = combined.get(productId);
+
+    existing.quantity += quantity;
+
+    existing.images = [
+      ...new Set([...existing.images, ...images]),
+    ];
+
+    if (existing.quantity > 1000) {
+      return null;
+    }
   }
 
-  if ([...combined.values()].some((quantity) => quantity > 1000)) {
-    return null;
-  }
-
-  return [...combined.entries()].map(([productId, quantity]) => ({
-    productId,
-    quantity,
-  }));
+  return [...combined.values()];
 }
 
 // =============================================
@@ -150,7 +182,6 @@ async function findOrCreateCustomerProfile(
   }
 
   try {
-    // Find every profile using this phone number.
     const [existingProfiles] = await connection.execute(
       `SELECT id, full_name, phone, pin_hash
        FROM customer_profiles
@@ -160,7 +191,6 @@ async function findOrCreateCustomerProfile(
       [phone]
     );
 
-    // Compare the submitted PIN with existing profiles.
     for (const profile of existingProfiles) {
       if (!profile.pin_hash) continue;
 
@@ -170,7 +200,6 @@ async function findOrCreateCustomerProfile(
       );
 
       if (pinMatches) {
-        // Same phone and same PIN: reuse profile.
         await connection.execute(
           `UPDATE customer_profiles
            SET full_name = ?
@@ -182,8 +211,6 @@ async function findOrCreateCustomerProfile(
       }
     }
 
-    // No matching phone + PIN combination.
-    // Create a new customer profile.
     const pinHash = await bcrypt.hash(pin, 12);
 
     const profileId = await generateId(
@@ -204,7 +231,6 @@ async function findOrCreateCustomerProfile(
 
     return profileId;
   } finally {
-    // Always release the named lock.
     await connection.execute(
       "SELECT RELEASE_LOCK(?)",
       [lockName]
@@ -405,7 +431,10 @@ async function createCustomerOrder(req, res) {
 
       const product = products[0];
 
-      // Check product status.
+      // =============================================
+      // CHECK PRODUCT STATUS
+      // =============================================
+
       if (
         String(product.status).trim().toLowerCase() !== "active"
       ) {
@@ -417,8 +446,10 @@ async function createCustomerOrder(req, res) {
         );
       }
 
-      // Check available stock.
-      // Stock is deducted only after worker approval.
+      // =============================================
+      // CHECK AVAILABLE STOCK
+      // =============================================
+
       if (Number(product.quantity) < requestedItem.quantity) {
         throw Object.assign(
           new Error(
@@ -428,7 +459,50 @@ async function createCustomerOrder(req, res) {
         );
       }
 
-      // Use trusted selling price.
+      // =============================================
+      // VALIDATE SELECTED IMAGES AGAINST DATABASE
+      // =============================================
+
+      const [galleryImages] = await connection.execute(
+        `SELECT image_path
+         FROM product_images
+         WHERE product_id = ?
+         ORDER BY is_primary DESC, id ASC`,
+        [product.id]
+      );
+
+      const availableImages = galleryImages.map(
+        (image) => image.image_path
+      );
+
+      const selectedImages = requestedItem.images;
+
+      // Reject image paths not belonging to this product.
+      const invalidImages = selectedImages.filter(
+        (image) => !availableImages.includes(image)
+      );
+
+      if (invalidImages.length > 0) {
+        throw Object.assign(
+          new Error(
+            `One or more selected images for ${product.name} are invalid. Please refresh the product page and try again.`
+          ),
+          { statusCode: 400 }
+        );
+      }
+
+      // Use selected images, or the product's primary image
+      // for older clients that do not submit image information.
+      const savedImages = selectedImages.length
+        ? selectedImages
+        : product.product_image
+          ? [product.product_image]
+          : [];
+
+      // =============================================
+      // TRUSTED SELLING PRICE
+      // =============================================
+
       const unitPrice = getTrustedUnitPrice(product);
 
       const lineTotal = Number(
@@ -442,7 +516,8 @@ async function createCustomerOrder(req, res) {
       orderItems.push({
         productId: product.id,
         productName: product.name,
-        productImage: product.product_image || null,
+        productImage: savedImages[0] || product.product_image || null,
+        productImages: savedImages,
         unitPrice,
         quantity: requestedItem.quantity,
         lineTotal,
@@ -500,7 +575,7 @@ async function createCustomerOrder(req, res) {
     );
 
     // =============================================
-    // SAVE ORDER PRODUCTS
+    // SAVE ORDER PRODUCTS AND IMAGES
     // =============================================
 
     for (const item of orderItems) {
@@ -516,26 +591,27 @@ async function createCustomerOrder(req, res) {
            product_id,
            product_name,
            product_image,
+           product_images,
            unit_price,
            quantity,
            line_total
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           itemId,
           orderId,
           item.productId,
           item.productName,
           item.productImage,
+          JSON.stringify(item.productImages),
           item.unitPrice,
           item.quantity,
           item.lineTotal,
         ]
       );
 
-      // Do not update products.quantity here.
-      // Do not update products.quantity_sold here.
-      // Both updates happen only after worker approval.
+      // Stock is NOT deducted here.
+      // Worker approval handles stock deduction.
     }
 
     // =============================================
@@ -623,9 +699,6 @@ async function createCustomerOrder(req, res) {
         }
       });
     } catch (notificationError) {
-      // Order is already committed.
-      // Notification failure must not make the customer
-      // think the order itself failed.
       console.error(
         "Order notification error:",
         notificationError.message
@@ -660,7 +733,6 @@ async function createCustomerOrder(req, res) {
       await connection.rollback().catch(() => {});
     }
 
-    // Remove uploaded receipt if order creation fails.
     await removeUploadedReceipt(req.file);
 
     if (error.statusCode) {
