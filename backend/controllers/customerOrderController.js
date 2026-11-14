@@ -57,6 +57,41 @@ function createOrderNumber() {
 }
 
 // =============================================
+// NORMALIZE IMAGE PATHS FOR COMPARISON
+// SUPPORT FULL URL AND RELATIVE PATH
+// =============================================
+
+function normalizeImagePath(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return "";
+  }
+
+  let imagePath = value.trim();
+
+  try {
+    if (/^https?:\/\//i.test(imagePath)) {
+      imagePath = new URL(imagePath).pathname;
+    }
+  } catch {
+    return "";
+  }
+
+  try {
+    imagePath = decodeURIComponent(imagePath);
+  } catch {
+    // Keep the original path if decoding fails.
+  }
+
+  return imagePath
+    .split("?")[0]
+    .split("#")[0]
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/")
+    .trim();
+}
+
+// =============================================
 // VALIDATE AND COMBINE ORDER ITEMS
 // PRESERVE SELECTED PRODUCT IMAGES
 // =============================================
@@ -461,6 +496,7 @@ async function createCustomerOrder(req, res) {
 
       // =============================================
       // VALIDATE SELECTED IMAGES AGAINST DATABASE
+      // SUPPORT MULTIPLE IMAGES AND FULL URLS
       // =============================================
 
       const [galleryImages] = await connection.execute(
@@ -471,16 +507,42 @@ async function createCustomerOrder(req, res) {
         [product.id]
       );
 
-      const availableImages = galleryImages.map(
-        (image) => image.image_path
-      );
+      const availableImageMap = new Map();
 
-      const selectedImages = requestedItem.images;
+      for (const image of galleryImages) {
+        const normalizedPath = normalizeImagePath(
+          image.image_path
+        );
 
-      // Reject image paths not belonging to this product.
-      const invalidImages = selectedImages.filter(
-        (image) => !availableImages.includes(image)
-      );
+        if (normalizedPath) {
+          availableImageMap.set(
+            normalizedPath,
+            image.image_path
+          );
+        }
+      }
+
+      const selectedImages = requestedItem.images || [];
+
+      const savedImages = [];
+      const invalidImages = [];
+
+      for (const selectedImage of selectedImages) {
+        const normalizedSelectedPath =
+          normalizeImagePath(selectedImage);
+
+        const trustedDatabasePath =
+          availableImageMap.get(normalizedSelectedPath);
+
+        if (!trustedDatabasePath) {
+          invalidImages.push(selectedImage);
+          continue;
+        }
+
+        if (!savedImages.includes(trustedDatabasePath)) {
+          savedImages.push(trustedDatabasePath);
+        }
+      }
 
       if (invalidImages.length > 0) {
         throw Object.assign(
@@ -491,13 +553,10 @@ async function createCustomerOrder(req, res) {
         );
       }
 
-      // Use selected images, or the product's primary image
-      // for older clients that do not submit image information.
-      const savedImages = selectedImages.length
-        ? selectedImages
-        : product.product_image
-          ? [product.product_image]
-          : [];
+      // Use selected images, or primary image for older clients.
+      if (savedImages.length === 0 && product.product_image) {
+        savedImages.push(product.product_image);
+      }
 
       // =============================================
       // TRUSTED SELLING PRICE
@@ -575,7 +634,7 @@ async function createCustomerOrder(req, res) {
     );
 
     // =============================================
-    // SAVE ORDER PRODUCTS AND IMAGES
+    // SAVE ORDER PRODUCTS AND IMAGE SNAPSHOTS
     // =============================================
 
     for (const item of orderItems) {
