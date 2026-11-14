@@ -49,7 +49,7 @@ async function generateProductImageId(connection) {
 }
 
 // ======================================================
-// FILE MANAGEMENT
+// TEMPORARY FILE MANAGEMENT
 // ======================================================
 
 function removeUploadedFiles(files = []) {
@@ -58,7 +58,7 @@ function removeUploadedFiles(files = []) {
       fs.unlink(file.path, (error) => {
         if (error && error.code !== "ENOENT") {
           console.error(
-            "Could not remove uploaded product file:",
+            "Could not remove temporary product image:",
             error.message
           );
         }
@@ -67,19 +67,22 @@ function removeUploadedFiles(files = []) {
   }
 }
 
+// Remove legacy local images only.
+// Never use this function for Cloudinary URLs.
 function removeImageFile(imagePath) {
-  if (!imagePath) return;
+  if (
+    !imagePath ||
+    imagePath.startsWith("http://") ||
+    imagePath.startsWith("https://")
+  ) {
+    return;
+  }
 
   const filename = path.basename(imagePath);
 
-  const fullPath = path.resolve(
-    uploadDirectory,
-    filename
-  );
-
+  const fullPath = path.resolve(uploadDirectory, filename);
   const safeDirectory = path.resolve(uploadDirectory);
 
-  // Only delete files inside the product image directory.
   if (path.dirname(fullPath) !== safeDirectory) {
     return;
   }
@@ -87,19 +90,113 @@ function removeImageFile(imagePath) {
   fs.unlink(fullPath, (error) => {
     if (error && error.code !== "ENOENT") {
       console.error(
-        "Could not remove product image:",
+        "Could not remove legacy product image:",
         error.message
       );
     }
   });
 }
 
-function imageUrl(file) {
-  return `/uploads/products/${file.filename}`;
+// ======================================================
+// CLOUDINARY IMAGE MANAGEMENT
+// ======================================================
+
+// Upload one temporary image to Cloudinary.
+async function uploadProductImage(file) {
+  const result = await cloudinary.uploader.upload(file.path, {
+    folder: "freshmart/products",
+    resource_type: "image",
+  });
+
+  return {
+    image_path: result.secure_url,
+    public_id: result.public_id,
+  };
+}
+
+// Extract Cloudinary public ID from its URL.
+function getCloudinaryPublicId(imageUrl) {
+  if (
+    !imageUrl ||
+    typeof imageUrl !== "string" ||
+    !imageUrl.includes("res.cloudinary.com")
+  ) {
+    return null;
+  }
+
+  try {
+    const pathname = new URL(imageUrl).pathname;
+    const uploadIndex = pathname.indexOf("/upload/");
+
+    if (uploadIndex === -1) {
+      return null;
+    }
+
+    let publicId = pathname.substring(uploadIndex + 8);
+
+    // Remove version prefix, for example v123456789/
+    publicId = publicId.replace(/^v\d+\//, "");
+
+    // Remove file extension.
+    publicId = publicId.replace(/\.[^/.]+$/, "");
+
+    return decodeURIComponent(publicId);
+  } catch (error) {
+    console.error(
+      "Could not extract Cloudinary public ID:",
+      error.message
+    );
+
+    return null;
+  }
+}
+
+// Delete one Cloudinary image.
+async function deleteCloudinaryImage(imageUrl) {
+  const publicId = getCloudinaryPublicId(imageUrl);
+
+  if (!publicId) {
+    return;
+  }
+
+  try {
+    await cloudinary.uploader.destroy(publicId, {
+      resource_type: "image",
+    });
+  } catch (error) {
+    console.error(
+      "Cloudinary image deletion failed:",
+      error.message
+    );
+  }
+}
+
+// Delete a stored image.
+// Supports both Cloudinary URLs and old local paths.
+async function deleteStoredImage(imagePath) {
+  if (!imagePath) return;
+
+  if (
+    imagePath.startsWith("https://") ||
+    imagePath.startsWith("http://")
+  ) {
+    await deleteCloudinaryImage(imagePath);
+  } else {
+    removeImageFile(imagePath);
+  }
+}
+
+// Clean up Cloudinary uploads if the database transaction fails.
+async function cleanupCloudinaryUploads(images = []) {
+  for (const image of images) {
+    if (image?.image_path) {
+      await deleteCloudinaryImage(image.image_path);
+    }
+  }
 }
 
 // ======================================================
-// VALIDATION HELPERS
+// PRODUCT VALIDATION
 // ======================================================
 
 function parseInteger(
@@ -198,15 +295,11 @@ function validateProduct(body) {
   }
 
   if (sku && sku.length > 80) {
-    throw new Error(
-      "SKU must not exceed 80 characters."
-    );
+    throw new Error("SKU must not exceed 80 characters.");
   }
 
   if (barcode && barcode.length > 100) {
-    throw new Error(
-      "Barcode must not exceed 100 characters."
-    );
+    throw new Error("Barcode must not exceed 100 characters.");
   }
 
   if (!unit || unit.length > 30) {
@@ -215,9 +308,7 @@ function validateProduct(body) {
     );
   }
 
-  if (
-    !["Active", "Inactive", "Archived"].includes(status)
-  ) {
+  if (!["Active", "Inactive", "Archived"].includes(status)) {
     throw new Error("Invalid product status.");
   }
 
@@ -311,10 +402,7 @@ function parseRemovedImages(value) {
   const ids = parsed.map((id) => {
     const number = Number(id);
 
-    if (
-      !Number.isSafeInteger(number) ||
-      number < 1
-    ) {
+    if (!Number.isSafeInteger(number) || number < 1) {
       throw new Error(
         "Invalid image ID in removed_images."
       );
@@ -375,9 +463,7 @@ async function attachImages(products) {
 
   const ids = products.map((product) => product.id);
 
-  const placeholders = ids
-    .map(() => "?")
-    .join(",");
+  const placeholders = ids.map(() => "?").join(",");
 
   const [images] = await db.execute(
     `SELECT
@@ -395,16 +481,18 @@ async function attachImages(products) {
   const imageMap = new Map();
 
   for (const image of images) {
-    if (!imageMap.has(image.product_id)) {
-      imageMap.set(image.product_id, []);
+    const productId = String(image.product_id);
+
+    if (!imageMap.has(productId)) {
+      imageMap.set(productId, []);
     }
 
-    imageMap.get(image.product_id).push(image);
+    imageMap.get(productId).push(image);
   }
 
   return products.map((product) => ({
     ...product,
-    images: imageMap.get(product.id) || [],
+    images: imageMap.get(String(product.id)) || [],
   }));
 }
 
@@ -421,10 +509,7 @@ function handleDatabaseError(error, res) {
     });
   }
 
-  console.error(
-    "Product database error:",
-    error
-  );
+  console.error("Product database error:", error);
 
   return res.status(500).json({
     success: false,
@@ -472,10 +557,7 @@ async function getProducts(req, res) {
 async function getProductById(req, res) {
   const id = Number(req.params.id);
 
-  if (
-    !Number.isSafeInteger(id) ||
-    id < 1
-  ) {
+  if (!Number.isSafeInteger(id) || id < 1) {
     return res.status(400).json({
       success: false,
       message: "Invalid product ID.",
@@ -524,6 +606,10 @@ async function getProductById(req, res) {
 async function createProduct(req, res) {
   let connection;
   let transactionStarted = false;
+  let databaseCommitted = false;
+
+  const uploadedImages = [];
+  const files = req.files || [];
 
   try {
     const product = validateProduct(req.body);
@@ -533,19 +619,15 @@ async function createProduct(req, res) {
     await connection.beginTransaction();
     transactionStarted = true;
 
-    // Validate category and brand.
     await validateCategoryAndBrand(
       connection,
       product.category_id,
       product.brand_id
     );
 
-    // Generate product ID.
-    const productId = await generateProductId(
-      connection
-    );
+    const productId = await generateProductId(connection);
 
-    // Insert product with explicit ID.
+    // Insert product.
     await connection.execute(
       `INSERT INTO products (
          id,
@@ -577,16 +659,13 @@ async function createProduct(req, res) {
       ]
     );
 
-    // Upload product images.
-    const files = req.files || [];
+    // Upload images to Cloudinary and save URLs.
+    for (let index = 0; index < files.length; index += 1) {
+      const uploadedImage = await uploadProductImage(files[index]);
 
-    for (
-      let index = 0;
-      index < files.length;
-      index += 1
-    ) {
-      const imageId =
-        await generateProductImageId(connection);
+      uploadedImages.push(uploadedImage);
+
+      const imageId = await generateProductImageId(connection);
 
       await connection.execute(
         `INSERT INTO product_images (
@@ -598,7 +677,7 @@ async function createProduct(req, res) {
         [
           imageId,
           productId,
-          imageUrl(files[index]),
+          uploadedImage.image_path,
           index === 0,
         ]
       );
@@ -606,6 +685,7 @@ async function createProduct(req, res) {
 
     await connection.commit();
     transactionStarted = false;
+    databaseCommitted = true;
 
     // Get created product.
     const [products] = await db.execute(
@@ -623,8 +703,7 @@ async function createProduct(req, res) {
       [productId]
     );
 
-    const [createdProduct] =
-      await attachImages(products);
+    const [createdProduct] = await attachImages(products);
 
     return res.status(201).json({
       success: true,
@@ -634,9 +713,14 @@ async function createProduct(req, res) {
   } catch (error) {
     if (transactionStarted && connection) {
       await connection.rollback();
+      transactionStarted = false;
     }
 
-    removeUploadedFiles(req.files);
+    // Only remove Cloudinary images if DB changes
+    // were not committed.
+    if (!databaseCommitted) {
+      await cleanupCloudinaryUploads(uploadedImages);
+    }
 
     if (error.message && !error.code) {
       return res.status(400).json({
@@ -647,6 +731,8 @@ async function createProduct(req, res) {
 
     return handleDatabaseError(error, res);
   } finally {
+    removeUploadedFiles(files);
+
     if (connection) {
       connection.release();
     }
@@ -663,13 +749,15 @@ async function updateProduct(req, res) {
 
   let connection;
   let transactionStarted = false;
-  let removedFilePaths = [];
+  let databaseCommitted = false;
 
-  if (
-    !Number.isSafeInteger(id) ||
-    id < 1
-  ) {
-    removeUploadedFiles(req.files);
+  let removedImagePaths = [];
+
+  const uploadedImages = [];
+  const newFiles = req.files || [];
+
+  if (!Number.isSafeInteger(id) || id < 1) {
+    removeUploadedFiles(newFiles);
 
     return res.status(400).json({
       success: false,
@@ -702,29 +790,27 @@ async function updateProduct(req, res) {
       throw new Error("Product not found.");
     }
 
-    // Validate category and brand.
     await validateCategoryAndBrand(
       connection,
       product.category_id,
       product.brand_id
     );
 
-    // Remove selected images from database.
+    // Find selected images to remove.
     if (removedImageIds.length) {
       const placeholders = removedImageIds
         .map(() => "?")
         .join(",");
 
-      const [imagesToRemove] =
-        await connection.execute(
-          `SELECT id, image_path
-           FROM product_images
-           WHERE product_id = ?
-             AND id IN (${placeholders})`,
-          [id, ...removedImageIds]
-        );
+      const [imagesToRemove] = await connection.execute(
+        `SELECT id, image_path
+         FROM product_images
+         WHERE product_id = ?
+           AND id IN (${placeholders})`,
+        [id, ...removedImageIds]
+      );
 
-      removedFilePaths = imagesToRemove.map(
+      removedImagePaths = imagesToRemove.map(
         (image) => image.image_path
       );
 
@@ -768,12 +854,13 @@ async function updateProduct(req, res) {
       ]
     );
 
-    // Add new product images with generated IDs.
-    const newFiles = req.files || [];
-
+    // Upload new images to Cloudinary.
     for (const file of newFiles) {
-      const imageId =
-        await generateProductImageId(connection);
+      const uploadedImage = await uploadProductImage(file);
+
+      uploadedImages.push(uploadedImage);
+
+      const imageId = await generateProductImageId(connection);
 
       await connection.execute(
         `INSERT INTO product_images (
@@ -785,33 +872,31 @@ async function updateProduct(req, res) {
         [
           imageId,
           id,
-          imageUrl(file),
+          uploadedImage.image_path,
         ]
       );
     }
 
     // Ensure at least one image is primary
     // whenever the product has images.
-    const [primaryRows] =
-      await connection.execute(
+    const [primaryRows] = await connection.execute(
+      `SELECT id
+       FROM product_images
+       WHERE product_id = ?
+         AND is_primary = 1
+       LIMIT 1`,
+      [id]
+    );
+
+    if (!primaryRows.length) {
+      const [firstImage] = await connection.execute(
         `SELECT id
          FROM product_images
          WHERE product_id = ?
-           AND is_primary = 1
+         ORDER BY id ASC
          LIMIT 1`,
         [id]
       );
-
-    if (!primaryRows.length) {
-      const [firstImage] =
-        await connection.execute(
-          `SELECT id
-           FROM product_images
-           WHERE product_id = ?
-           ORDER BY id ASC
-           LIMIT 1`,
-          [id]
-        );
 
       if (firstImage.length) {
         await connection.execute(
@@ -825,11 +910,11 @@ async function updateProduct(req, res) {
 
     await connection.commit();
     transactionStarted = false;
+    databaseCommitted = true;
 
-    // Delete old image files only after
-    // the database transaction succeeds.
-    for (const filePath of removedFilePaths) {
-      removeImageFile(filePath);
+    // Delete old images only after DB commit.
+    for (const imagePath of removedImagePaths) {
+      await deleteStoredImage(imagePath);
     }
 
     // Get updated product.
@@ -848,8 +933,7 @@ async function updateProduct(req, res) {
       [id]
     );
 
-    const [updatedProduct] =
-      await attachImages(products);
+    const [updatedProduct] = await attachImages(products);
 
     return res.json({
       success: true,
@@ -859,9 +943,12 @@ async function updateProduct(req, res) {
   } catch (error) {
     if (transactionStarted && connection) {
       await connection.rollback();
+      transactionStarted = false;
     }
 
-    removeUploadedFiles(req.files);
+    if (!databaseCommitted) {
+      await cleanupCloudinaryUploads(uploadedImages);
+    }
 
     if (error.message === "Product not found.") {
       return res.status(404).json({
@@ -879,6 +966,8 @@ async function updateProduct(req, res) {
 
     return handleDatabaseError(error, res);
   } finally {
+    removeUploadedFiles(newFiles);
+
     if (connection) {
       connection.release();
     }
@@ -893,10 +982,7 @@ async function updateProduct(req, res) {
 async function deleteProduct(req, res) {
   const id = Number(req.params.id);
 
-  if (
-    !Number.isSafeInteger(id) ||
-    id < 1
-  ) {
+  if (!Number.isSafeInteger(id) || id < 1) {
     return res.status(400).json({
       success: false,
       message: "Invalid product ID.",
@@ -943,7 +1029,7 @@ async function deleteProduct(req, res) {
       });
     }
 
-    // Get product image paths.
+    // Get image paths before deleting database records.
     const [images] = await connection.execute(
       `SELECT image_path
        FROM product_images
@@ -951,7 +1037,7 @@ async function deleteProduct(req, res) {
       [id]
     );
 
-    // Delete image database records first.
+    // Delete image database records.
     await connection.execute(
       `DELETE FROM product_images
        WHERE product_id = ?`,
@@ -968,9 +1054,10 @@ async function deleteProduct(req, res) {
     await connection.commit();
     transactionStarted = false;
 
-    // Delete image files after successful commit.
+    // Delete Cloudinary and legacy local images
+    // after the database transaction succeeds.
     for (const image of images) {
-      removeImageFile(image.image_path);
+      await deleteStoredImage(image.image_path);
     }
 
     return res.json({
