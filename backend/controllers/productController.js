@@ -2,6 +2,7 @@
 const db = require("../db");
 const fs = require("fs");
 const path = require("path");
+const cloudinary = require("../config/cloudinary");
 
 // ======================================================
 // PRODUCT IMAGE DIRECTORY
