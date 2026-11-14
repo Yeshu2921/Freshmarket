@@ -34,25 +34,80 @@ const emptyCustomer = {
   confirmPin: "",
 };
 
+// =============================================
+// CART HELPERS
+// =============================================
+
+function createCartItemId(item, index = 0) {
+  const productId =
+    item.productId ??
+    item.product_id ??
+    item.product?.id ??
+    item.id ??
+    "unknown";
+
+  const image =
+    item.image ??
+    item.imageUrl ??
+    item.image_url ??
+    item.image_path ??
+    item.product_image ??
+    "";
+
+  return `cart-${productId}-${index}-${String(image)}`;
+}
+
+function normalizeCartItems(items) {
+  if (!Array.isArray(items)) return [];
+
+  const usedIds = new Set();
+
+  return items.map((item, index) => {
+    let cartItemId =
+      item.cartItemId ||
+      item.cart_item_id ||
+      createCartItemId(item, index);
+
+    // Make IDs unique even for old cart entries.
+    if (usedIds.has(cartItemId)) {
+      cartItemId = `${cartItemId}-${index}`;
+    }
+
+    usedIds.add(cartItemId);
+
+    return {
+      ...item,
+      cartItemId,
+    };
+  });
+}
+
 function getStoredCart() {
   try {
     const sessionCart = sessionStorage.getItem(CART_KEY);
 
     if (sessionCart !== null) {
       const parsed = JSON.parse(sessionCart);
-      return Array.isArray(parsed) ? parsed : [];
+
+      return normalizeCartItems(parsed);
     }
 
-    // Migrate older cart data only if the session cart is absent.
     const localCart = localStorage.getItem(CART_KEY);
 
     if (localCart !== null) {
       const parsed = JSON.parse(localCart);
 
       if (Array.isArray(parsed)) {
-        sessionStorage.setItem(CART_KEY, JSON.stringify(parsed));
+        const normalized = normalizeCartItems(parsed);
+
+        sessionStorage.setItem(
+          CART_KEY,
+          JSON.stringify(normalized)
+        );
+
         localStorage.removeItem(CART_KEY);
-        return parsed;
+
+        return normalized;
       }
     }
 
@@ -119,6 +174,7 @@ function getProductImage(item) {
 
 function getQuantity(item) {
   const quantity = Math.floor(Number(item.quantity) || 1);
+
   return Math.min(MAX_QUANTITY, Math.max(1, quantity));
 }
 
@@ -128,18 +184,64 @@ function notifyCartUpdated() {
 
 function saveCart(cart) {
   try {
-    if (cart.length > 0) {
-      sessionStorage.setItem(CART_KEY, JSON.stringify(cart));
+    const normalized = normalizeCartItems(cart);
+
+    if (normalized.length > 0) {
+      sessionStorage.setItem(
+        CART_KEY,
+        JSON.stringify(normalized)
+      );
     } else {
       sessionStorage.removeItem(CART_KEY);
     }
 
     localStorage.removeItem(CART_KEY);
+
     notifyCartUpdated();
   } catch (error) {
     console.error("Unable to save cart:", error);
   }
 }
+
+// =============================================
+// GROUP CART ITEMS FOR ORDER SUBMISSION
+// =============================================
+
+function prepareOrderItems(cart) {
+  const combined = new Map();
+
+  for (const item of cart) {
+    const productId = Number(getProductId(item));
+    const quantity = getQuantity(item);
+    const image = item.image || item.image_path || "";
+
+    if (!combined.has(productId)) {
+      combined.set(productId, {
+        productId,
+        quantity: 0,
+        images: [],
+      });
+    }
+
+    const existing = combined.get(productId);
+
+    existing.quantity += quantity;
+
+    if (typeof image === "string" && image.trim()) {
+      const cleanImage = image.trim();
+
+      if (!existing.images.includes(cleanImage)) {
+        existing.images.push(cleanImage);
+      }
+    }
+  }
+
+  return Array.from(combined.values());
+}
+
+// =============================================
+// ORDER PAGE
+// =============================================
 
 export default function OrderPage() {
   const navigate = useNavigate();
@@ -147,9 +249,9 @@ export default function OrderPage() {
   const [cart, setCart] = useState(getStoredCart);
   const [customer, setCustomer] = useState(emptyCustomer);
 
-  // Payment methods loaded from the database.
   const [paymentMethods, setPaymentMethods] = useState([]);
-  const [paymentMethodsLoading, setPaymentMethodsLoading] = useState(true);
+  const [paymentMethodsLoading, setPaymentMethodsLoading] =
+    useState(true);
   const [paymentMethodsError, setPaymentMethodsError] = useState("");
 
   const [paymentMethod, setPaymentMethod] = useState(
@@ -166,10 +268,13 @@ export default function OrderPage() {
 
   const isCash = paymentMethod === CASH_ON_DELIVERY;
 
-  // Find the selected payment method from the database records.
   const paymentDetails = paymentMethods.find(
     (method) => method.method_name === paymentMethod
   );
+
+  // =============================================
+  // CALCULATE TOTALS
+  // =============================================
 
   const subtotal = useMemo(
     () =>
@@ -182,11 +287,18 @@ export default function OrderPage() {
   );
 
   const itemCount = useMemo(
-    () => cart.reduce((sum, item) => sum + getQuantity(item), 0),
+    () =>
+      cart.reduce(
+        (sum, item) => sum + getQuantity(item),
+        0
+      ),
     [cart]
   );
 
-  // Load payment methods managed by the owner.
+  // =============================================
+  // LOAD PAYMENT METHODS
+  // =============================================
+
   useEffect(() => {
     let isMounted = true;
 
@@ -195,7 +307,9 @@ export default function OrderPage() {
       setPaymentMethodsError("");
 
       try {
-        const response = await fetch(`${API}/homepage/payment-methods`);
+        const response = await fetch(
+          `${API}/homepage/payment-methods`
+        );
 
         const data = await response.json().catch(() => ({}));
 
@@ -217,8 +331,6 @@ export default function OrderPage() {
         if (isMounted) {
           setPaymentMethods(methods);
 
-          // If the previously selected method no longer exists,
-          // return to Cash on Delivery.
           setPaymentMethod((currentMethod) => {
             if (
               currentMethod !== CASH_ON_DELIVERY &&
@@ -237,6 +349,7 @@ export default function OrderPage() {
 
         if (isMounted) {
           setPaymentMethods([]);
+
           setPaymentMethodsError(
             err.message ||
               "Unable to load payment methods. You can still use Cash on Delivery."
@@ -256,19 +369,26 @@ export default function OrderPage() {
     };
   }, []);
 
-  // Persist changes made from the order page.
+  // =============================================
+  // PERSIST CART
+  // =============================================
+
   useEffect(() => {
     saveCart(cart);
   }, [cart]);
 
-  // Update this page if another component changes the cart.
+  // =============================================
+  // LISTEN FOR CART CHANGES
+  // =============================================
+
   useEffect(() => {
     function handleCartUpdate() {
       const updatedCart = getStoredCart();
 
       setCart((currentCart) => {
         if (
-          JSON.stringify(currentCart) === JSON.stringify(updatedCart)
+          JSON.stringify(currentCart) ===
+          JSON.stringify(updatedCart)
         ) {
           return currentCart;
         }
@@ -284,6 +404,10 @@ export default function OrderPage() {
     };
   }, []);
 
+  // =============================================
+  // CUSTOMER INFORMATION
+  // =============================================
+
   function updateCustomer(event) {
     const { name, value } = event.target;
 
@@ -293,35 +417,47 @@ export default function OrderPage() {
     }));
   }
 
-  function updateQuantity(productId, change) {
-  setCart((prevCart) =>
-    prevCart.map((item) => {
-      if (String(getProductId(item)) !== String(productId)) {
-        return item;
-      }
+  // =============================================
+  // UPDATE ONLY THE SELECTED CART IMAGE ENTRY
+  // =============================================
 
-      const currentQuantity = getQuantity(item);
+  function updateQuantity(cartItemId, change) {
+    setCart((previousCart) =>
+      previousCart.map((item) => {
+        if (item.cartItemId !== cartItemId) {
+          return item;
+        }
 
-      const newQuantity = Math.min(
-        MAX_QUANTITY,
-        Math.max(1, currentQuantity + change)
-      );
+        const currentQuantity = getQuantity(item);
 
-      return {
-        ...item,
-        quantity: newQuantity,
-      };
-    })
-  );
-}
-  function removeItem(productId) {
-    setCart((previous) =>
-      previous.filter(
-        (item) =>
-          String(getProductId(item)) !== String(productId)
+        const newQuantity = Math.min(
+          MAX_QUANTITY,
+          Math.max(1, currentQuantity + change)
+        );
+
+        return {
+          ...item,
+          quantity: newQuantity,
+        };
+      })
+    );
+  }
+
+  // =============================================
+  // REMOVE ONLY THE SELECTED CART IMAGE ENTRY
+  // =============================================
+
+  function removeItem(cartItemId) {
+    setCart((previousCart) =>
+      previousCart.filter(
+        (item) => item.cartItemId !== cartItemId
       )
     );
   }
+
+  // =============================================
+  // PAYMENT METHOD
+  // =============================================
 
   function handlePaymentMethodChange(event) {
     const selectedMethod = event.target.value;
@@ -335,6 +471,10 @@ export default function OrderPage() {
       selectedMethod !== CASH_ON_DELIVERY
     );
   }
+
+  // =============================================
+  // RECEIPT UPLOAD
+  // =============================================
 
   function handleReceiptChange(event) {
     const file = event.target.files?.[0];
@@ -351,13 +491,19 @@ export default function OrderPage() {
     ];
 
     if (!allowedTypes.includes(file.type)) {
-      setError("Please select a JPG, PNG, or WEBP receipt image.");
+      setError(
+        "Please select a JPG, PNG, or WEBP receipt image."
+      );
+
       event.target.value = "";
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setError("The receipt image must be 5 MB or smaller.");
+      setError(
+        "The receipt image must be 5 MB or smaller."
+      );
+
       event.target.value = "";
       return;
     }
@@ -366,6 +512,10 @@ export default function OrderPage() {
     setReceipt(file);
     setReceiptName(file.name);
   }
+
+  // =============================================
+  // FORM VALIDATION
+  // =============================================
 
   function validateForm() {
     if (cart.length === 0) {
@@ -388,9 +538,7 @@ export default function OrderPage() {
       return "The PIN and confirmation PIN do not match.";
     }
 
-    if (isCash) {
-      // Cash on Delivery is always available.
-    } else {
+    if (!isCash) {
       const selectedMethodExists = paymentMethods.some(
         (method) => method.method_name === paymentMethod
       );
@@ -427,6 +575,10 @@ export default function OrderPage() {
     return "";
   }
 
+  // =============================================
+  // SUBMIT ORDER
+  // =============================================
+
   async function submitOrder(event) {
     event.preventDefault();
 
@@ -445,8 +597,15 @@ export default function OrderPage() {
     try {
       const formData = new FormData();
 
-      formData.append("fullName", customer.fullName.trim());
-      formData.append("phone", customer.phone.trim());
+      formData.append(
+        "fullName",
+        customer.fullName.trim()
+      );
+
+      formData.append(
+        "phone",
+        customer.phone.trim()
+      );
 
       formData.append(
         "deliveryLocation",
@@ -454,26 +613,30 @@ export default function OrderPage() {
       );
 
       formData.append("pin", customer.pin);
-      formData.append("paymentMethod", paymentMethod);
 
       formData.append(
+        "paymentMethod",
+        paymentMethod
+      );
+
+      // Group entries by product ID.
+      // Preserve every selected image.
+      formData.append(
         "items",
-        JSON.stringify(
-          cart.map((item) => ({
-            productId: Number(getProductId(item)),
-            quantity: getQuantity(item),
-          }))
-        )
+        JSON.stringify(prepareOrderItems(cart))
       );
 
       if (receipt && !isCash) {
         formData.append("receipt", receipt);
       }
 
-      const response = await fetch(`${API}/customer-orders`, {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(
+        `${API}/customer-orders`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
       const data = await response.json().catch(() => ({}));
 
@@ -484,7 +647,7 @@ export default function OrderPage() {
         );
       }
 
-      // Clear only after the server confirms successful submission.
+      // Clear cart only after successful submission.
       sessionStorage.removeItem(CART_KEY);
       localStorage.removeItem(CART_KEY);
 
@@ -514,13 +677,22 @@ export default function OrderPage() {
     }
   }
 
+  // =============================================
+  // RENDER
+  // =============================================
+
   return (
     <div className="customer-order-page">
       <div className="customer-order-container">
+
         <div className="customer-order-heading">
           <div>
-            <span className="customer-order-eyebrow">FRESHMART</span>
+            <span className="customer-order-eyebrow">
+              FRESHMART
+            </span>
+
             <h1>Complete Your Order</h1>
+
             <p>
               Enter your delivery information and choose how you want to pay.
             </p>
@@ -569,8 +741,12 @@ export default function OrderPage() {
         {cart.length === 0 ? (
           <Card className="customer-order-empty-card">
             <Card.Body>
-              <div className="customer-order-empty-icon">🛒</div>
+              <div className="customer-order-empty-icon">
+                🛒
+              </div>
+
               <h3>Your cart is empty</h3>
+
               <p>
                 Add products to your cart before completing an order.
               </p>
@@ -587,15 +763,23 @@ export default function OrderPage() {
         ) : (
           <Form onSubmit={submitOrder}>
             <Row className="g-4">
+
+              {/* CUSTOMER INFORMATION */}
+
               <Col lg={7}>
                 <Card className="customer-order-card">
                   <Card.Body>
                     <div className="customer-order-section-heading">
-                      <span className="customer-order-step">1</span>
+                      <span className="customer-order-step">
+                        1
+                      </span>
 
                       <div>
                         <h2>Customer Information</h2>
-                        <p>Use a phone number you can access later.</p>
+
+                        <p>
+                          Use a phone number you can access later.
+                        </p>
                       </div>
                     </div>
 
@@ -632,7 +816,9 @@ export default function OrderPage() {
                     </Form.Group>
 
                     <Form.Group className="mb-3">
-                      <Form.Label>Delivery Location (Optional)</Form.Label>
+                      <Form.Label>
+                        Delivery Location (Optional)
+                      </Form.Label>
 
                       <Form.Control
                         as="textarea"
@@ -662,7 +848,9 @@ export default function OrderPage() {
                     <Row className="g-3">
                       <Col sm={6}>
                         <Form.Group>
-                          <Form.Label>PIN (4–6 digits) *</Form.Label>
+                          <Form.Label>
+                            PIN (4–6 digits) *
+                          </Form.Label>
 
                           <Form.Control
                             type="password"
@@ -701,14 +889,21 @@ export default function OrderPage() {
                   </Card.Body>
                 </Card>
 
+                {/* PAYMENT METHOD */}
+
                 <Card className="customer-order-card mt-4">
                   <Card.Body>
                     <div className="customer-order-section-heading">
-                      <span className="customer-order-step">2</span>
+                      <span className="customer-order-step">
+                        2
+                      </span>
 
                       <div>
                         <h2>Payment Method</h2>
-                        <p>Choose your preferred payment option.</p>
+
+                        <p>
+                          Choose your preferred payment option.
+                        </p>
                       </div>
                     </div>
 
@@ -741,6 +936,7 @@ export default function OrderPage() {
                             size="sm"
                             className="me-2"
                           />
+
                           Loading available payment methods...
                         </Form.Text>
                       )}
@@ -762,15 +958,15 @@ export default function OrderPage() {
 
                     {isCash ? (
                       <Alert variant="info" className="mb-0">
-               <strong>Cash on Delivery – Pay After Delivery</strong>
+                        <strong>
+                          Cash on Delivery – Pay After Delivery
+                        </strong>
 
-               <p className="mb-2 mt-2">
-            You will pay for your products after your order has been
-         delivered to you.
-            </p>
-
-  
-</Alert>
+                        <p className="mb-2 mt-2">
+                          You will pay for your products after your order has
+                          been delivered to you.
+                        </p>
+                      </Alert>
                     ) : (
                       <div className="customer-order-receipt-box">
                         {paymentDetails && (
@@ -800,7 +996,9 @@ export default function OrderPage() {
                               type="button"
                               size="sm"
                               variant="outline-primary"
-                              onClick={() => setShowPaymentDetails(true)}
+                              onClick={() =>
+                                setShowPaymentDetails(true)
+                              }
                             >
                               View Account Details
                             </Button>
@@ -808,7 +1006,9 @@ export default function OrderPage() {
                         )}
 
                         <Form.Group>
-                          <Form.Label>Payment Receipt Image *</Form.Label>
+                          <Form.Label>
+                            Payment Receipt Image *
+                          </Form.Label>
 
                           <Form.Control
                             type="file"
@@ -823,7 +1023,10 @@ export default function OrderPage() {
                         </Form.Group>
 
                         {receiptName && (
-                          <Alert variant="success" className="mt-3 mb-0">
+                          <Alert
+                            variant="success"
+                            className="mt-3 mb-0"
+                          >
                             Selected receipt: {receiptName}
                           </Alert>
                         )}
@@ -838,11 +1041,15 @@ export default function OrderPage() {
                 </Card>
               </Col>
 
+              {/* ORDER SUMMARY */}
+
               <Col lg={5}>
                 <Card className="customer-order-card customer-order-summary-card">
                   <Card.Body>
                     <div className="customer-order-section-heading">
-                      <span className="customer-order-step">3</span>
+                      <span className="customer-order-step">
+                        3
+                      </span>
 
                       <div>
                         <h2>Order Summary</h2>
@@ -855,8 +1062,8 @@ export default function OrderPage() {
                     </div>
 
                     <div className="customer-order-items">
-                      {cart.map((item, index) => {
-                        const id = getProductId(item);
+                      {cart.map((item) => {
+                        const cartItemId = item.cartItemId;
                         const quantity = getQuantity(item);
                         const price = getProductPrice(item);
                         const image = getProductImage(item);
@@ -865,7 +1072,7 @@ export default function OrderPage() {
                         return (
                           <div
                             className="customer-order-item"
-                            key={id ?? index}
+                            key={cartItemId}
                           >
                             <div className="customer-order-item-image">
                               {image ? (
@@ -873,7 +1080,8 @@ export default function OrderPage() {
                                   src={image}
                                   alt={name}
                                   onError={(event) => {
-                                    event.currentTarget.style.display = "none";
+                                    event.currentTarget.style.display =
+                                      "none";
                                   }}
                                 />
                               ) : (
@@ -883,14 +1091,19 @@ export default function OrderPage() {
 
                             <div className="customer-order-item-details">
                               <h3>{name}</h3>
-                              <p>{price.toFixed(2)} ETB each</p>
+
+                              <p>
+                                {price.toFixed(2)} ETB each
+                              </p>
 
                               <div className="customer-order-quantity">
                                 <Button
                                   type="button"
                                   variant="outline-secondary"
                                   aria-label={`Decrease ${name} quantity`}
-                                  onClick={() => updateQuantity(id, -1)}
+                                  onClick={() =>
+                                    updateQuantity(cartItemId, -1)
+                                  }
                                   disabled={quantity <= 1}
                                 >
                                   −
@@ -902,7 +1115,9 @@ export default function OrderPage() {
                                   type="button"
                                   variant="outline-secondary"
                                   aria-label={`Increase ${name} quantity`}
-                                  onClick={() => updateQuantity(id, 1)}
+                                  onClick={() =>
+                                    updateQuantity(cartItemId, 1)
+                                  }
                                   disabled={quantity >= MAX_QUANTITY}
                                   title={
                                     quantity >= MAX_QUANTITY
@@ -917,7 +1132,9 @@ export default function OrderPage() {
                                   type="button"
                                   variant="link"
                                   className="customer-order-remove"
-                                  onClick={() => removeItem(id)}
+                                  onClick={() =>
+                                    removeItem(cartItemId)
+                                  }
                                 >
                                   Remove
                                 </Button>
@@ -941,17 +1158,26 @@ export default function OrderPage() {
                     <div className="customer-order-totals">
                       <div>
                         <span>Subtotal</span>
-                        <strong>{subtotal.toFixed(2)} ETB</strong>
+
+                        <strong>
+                          {subtotal.toFixed(2)} ETB
+                        </strong>
                       </div>
 
                       <div>
                         <span>Delivery fee</span>
-                        <Badge bg="secondary">To be confirmed</Badge>
+
+                        <Badge bg="secondary">
+                          To be confirmed
+                        </Badge>
                       </div>
 
                       <div className="customer-order-grand-total">
                         <span>Total before delivery fee</span>
-                        <strong>{subtotal.toFixed(2)} ETB</strong>
+
+                        <strong>
+                          {subtotal.toFixed(2)} ETB
+                        </strong>
                       </div>
                     </div>
 
@@ -977,6 +1203,7 @@ export default function OrderPage() {
                             animation="border"
                             className="me-2"
                           />
+
                           Submitting Order...
                         </>
                       ) : (
@@ -994,6 +1221,8 @@ export default function OrderPage() {
             </Row>
           </Form>
         )}
+
+        {/* PAYMENT DETAILS MODAL */}
 
         <Modal
           show={showPaymentDetails && !isCash}
@@ -1041,6 +1270,7 @@ export default function OrderPage() {
             </Button>
           </Modal.Footer>
         </Modal>
+
       </div>
     </div>
   );
