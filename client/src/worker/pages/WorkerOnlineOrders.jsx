@@ -13,7 +13,7 @@ function getToken() {
 }
 
 function getImageUrl(imagePath) {
-  if (!imagePath) return "";
+  if (!imagePath || typeof imagePath !== "string") return "";
 
   if (
     imagePath.startsWith("http://") ||
@@ -23,6 +23,42 @@ function getImageUrl(imagePath) {
   }
 
   return `${SERVER_BASE}/${imagePath.replace(/^\/+/, "")}`;
+}
+
+// Get every selected image for an order item.
+// Supports both the new product_images array and old product_image.
+function getOrderItemImages(item) {
+  let images = [];
+
+  if (Array.isArray(item?.product_images)) {
+    images = item.product_images;
+  } else if (typeof item?.product_images === "string") {
+    try {
+      images = JSON.parse(item.product_images);
+    } catch {
+      images = [];
+    }
+  }
+
+  if (!Array.isArray(images)) {
+    images = [];
+  }
+
+  images = [
+    ...new Set(
+      images.filter(
+        (image) =>
+          typeof image === "string" && image.trim() !== ""
+      )
+    ),
+  ];
+
+  // Backward compatibility with older orders.
+  if (images.length === 0 && item?.product_image) {
+    images = [item.product_image];
+  }
+
+  return images;
 }
 
 function formatMoney(value) {
@@ -201,7 +237,16 @@ function WorkerOnlineOrders() {
 
       const order = data.order;
 
-      setSelectedOrder(order);
+      // Normalize image arrays for every item.
+      const normalizedOrder = {
+        ...order,
+        items: (order.items || []).map((item) => ({
+          ...item,
+          product_images: getOrderItemImages(item),
+        })),
+      };
+
+      setSelectedOrder(normalizedOrder);
 
       // Cash on Delivery does not require a receipt.
       if (
@@ -480,14 +525,12 @@ function WorkerOnlineOrders() {
         );
       }
 
-      // Remove deleted order from the list.
       setOrders((previousOrders) =>
         previousOrders.filter(
           (item) => Number(item.id) !== Number(order.id)
         )
       );
 
-      // Close modal if the deleted order is currently open.
       if (
         selectedOrder &&
         Number(selectedOrder.id) === Number(order.id)
@@ -847,7 +890,6 @@ function WorkerOnlineOrders() {
                     ) : null}
                   </div>
 
-                  {/* View Details + Delete rejected order */}
                   <div className="wo-order-actions">
                     <button
                       type="button"
@@ -1016,40 +1058,64 @@ function WorkerOnlineOrders() {
 
                     <div className="wo-detail-items">
                       {(selectedOrder.items || []).map(
-                        (item) => (
-                          <div
-                            className="wo-detail-item"
-                            key={item.id}
-                          >
-                            <div className="wo-item-image">
-                              {item.product_image ? (
-                                <img
-                                  src={getImageUrl(
-                                    item.product_image
-                                  )}
-                                  alt={item.product_name}
-                                />
-                              ) : (
-                                <i className="bi bi-image"></i>
-                              )}
-                            </div>
+                        (item) => {
+                          const productImages =
+                            getOrderItemImages(item);
 
-                            <div className="wo-item-description">
-                              <strong>
-                                {item.product_name}
+                          return (
+                            <div
+                              className="wo-detail-item"
+                              key={item.id}
+                            >
+                              {/* ALL SELECTED PRODUCT IMAGES */}
+                              <div className="wo-item-images">
+                                {productImages.length > 0 ? (
+                                  productImages.map(
+                                    (image, imageIndex) => (
+                                      <div
+                                        className="wo-item-image"
+                                        key={`${item.id}-${imageIndex}`}
+                                      >
+                                        <img
+                                          src={getImageUrl(image)}
+                                          alt={`${item.product_name} image ${imageIndex + 1}`}
+                                          loading="lazy"
+                                        />
+                                      </div>
+                                    )
+                                  )
+                                ) : (
+                                  <div className="wo-item-image wo-no-product-image">
+                                    <i className="bi bi-image"></i>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="wo-item-description">
+                                <strong>
+                                  {item.product_name}
+                                </strong>
+
+                                <span>
+                                  {formatMoney(item.unit_price)} ×{" "}
+                                  {item.quantity}
+                                </span>
+
+                                <small className="wo-image-count">
+                                  <i className="bi bi-images"></i>
+                                  {productImages.length} selected{" "}
+                                  {productImages.length === 1
+                                    ? "image"
+                                    : "images"}
+                                </small>
+                              </div>
+
+                              <strong className="wo-item-total">
+                                {formatMoney(item.line_total)}
                               </strong>
-
-                              <span>
-                                {formatMoney(item.unit_price)} ×{" "}
-                                {item.quantity}
-                              </span>
                             </div>
-
-                            <strong className="wo-item-total">
-                              {formatMoney(item.line_total)}
-                            </strong>
-                          </div>
-                        )
+                          );
+                        }
                       )}
                     </div>
                   </div>
@@ -1226,9 +1292,7 @@ function WorkerOnlineOrders() {
                       <span>Delivery Fee</span>
 
                       <strong>
-                        {formatMoney(
-                          selectedOrder.delivery_fee
-                        )}
+                        {formatMoney(selectedOrder.delivery_fee)}
                       </strong>
                     </div>
 
