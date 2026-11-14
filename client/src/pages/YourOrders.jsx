@@ -1,7 +1,15 @@
 
 import { useState } from "react";
 import {
-  Alert,Badge, Button, Card,Col, Container, Form, Row, Spinner,
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Col,
+  Container,
+  Form,
+  Row,
+  Spinner,
 } from "react-bootstrap";
 import {
   Search,
@@ -41,13 +49,62 @@ function money(value) {
 }
 
 function getProductImage(image) {
-  if (!image) return "/placeholder-product.png";
-
-  if (/^(https?:\/\/|data:|blob:)/i.test(image)) {
-    return image;
+  if (!image || typeof image !== "string") {
+    return "/placeholder-product.png";
   }
 
-  return `${IMAGE_BASE}/${image.replace(/^\/+/, "")}`;
+  const cleanImage = image.trim();
+
+  if (/^(https?:\/\/|data:|blob:)/i.test(cleanImage)) {
+    return cleanImage;
+  }
+
+  return `${IMAGE_BASE}/${cleanImage.replace(/^\/+/, "")}`;
+}
+
+// Get ALL images belonging to an ordered product.
+function getProductImages(item) {
+  let images = [];
+
+  if (Array.isArray(item.product_images)) {
+    images = item.product_images;
+  } else if (typeof item.product_images === "string") {
+    try {
+      const parsed = JSON.parse(item.product_images);
+
+      if (Array.isArray(parsed)) {
+        images = parsed;
+      } else if (typeof parsed === "string") {
+        images = [parsed];
+      }
+    } catch {
+      // Support a single image path stored as plain text.
+      if (item.product_images.trim()) {
+        images = [item.product_images.trim()];
+      }
+    }
+  }
+
+  // Backward compatibility with older orders.
+  if (images.length === 0 && item.product_image) {
+    images = [item.product_image];
+  }
+
+  // Keep valid image strings and remove duplicates.
+  images = [
+    ...new Set(
+      images
+        .filter(
+          (image) =>
+            typeof image === "string" && image.trim()
+        )
+        .map((image) => image.trim())
+    ),
+  ];
+
+  return images.length > 0
+    ? images
+    : ["/placeholder-product.png"];
 }
 
 function statusVariant(status) {
@@ -158,9 +215,11 @@ export default function YourOrders() {
       }
 
       setCustomer(data.customer || null);
+
       setOrders(
         Array.isArray(data.orders) ? data.orders : []
       );
+
       setSearched(true);
     } catch (err) {
       setOrders([]);
@@ -219,7 +278,9 @@ export default function YourOrders() {
                       type="tel"
                       placeholder="Enter your phone number"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) =>
+                        setPhone(e.target.value)
+                      }
                       autoComplete="tel"
                       required
                     />
@@ -235,7 +296,9 @@ export default function YourOrders() {
                       inputMode="numeric"
                       placeholder="Enter your PIN"
                       value={pin}
-                      onChange={(e) => setPin(e.target.value)}
+                      onChange={(e) =>
+                        setPin(e.target.value)
+                      }
                       autoComplete="off"
                       required
                     />
@@ -313,7 +376,9 @@ export default function YourOrders() {
 
             <h5 className="mt-3">Finding Your Orders</h5>
 
-            <p>Please wait while we retrieve your order history.</p>
+            <p>
+              Please wait while we retrieve your order history.
+            </p>
           </div>
         )}
 
@@ -321,8 +386,8 @@ export default function YourOrders() {
         {searched && orders.length === 0 && !loading && (
           <div className="orders-empty-state">
             <div className="orders-empty-icon">
-             <Bag />
-              </div>
+              <Bag />
+            </div>
 
             <h5>No Orders Found</h5>
 
@@ -375,40 +440,56 @@ export default function YourOrders() {
 
                     {/* Products */}
                     <div className="order-products">
-                      {order.items?.map((item, index) => (
-                        <div
-                          className="order-product-row"
-                          key={item.id || `${order.id}-${index}`}
-                        >
-                          <div className="order-product-image">
-                            <img
-                              src={getProductImage(item.product_image)}
-                              alt={item.product_name}
-                              onError={(e) => {
-                                e.currentTarget.onerror = null;
-                                e.currentTarget.src =
-                                  "/placeholder-product.png";
-                              }}
-                            />
+                      {order.items?.map((item, index) => {
+                        const productImages =
+                          getProductImages(item);
+
+                        return (
+                          <div
+                            className="order-product-row"
+                            key={item.id || `${order.id}-${index}`}
+                          >
+                            {/* Display every product image */}
+                            <div className="order-product-images">
+                              {productImages.map(
+                                (image, imageIndex) => (
+                                  <div
+                                    className="order-product-image"
+                                    key={`${item.id || index}-${imageIndex}`}
+                                  >
+                                    <img
+                                      src={getProductImage(image)}
+                                      alt={`${item.product_name} ${imageIndex + 1}`}
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        e.currentTarget.onerror = null;
+                                        e.currentTarget.src =
+                                          "/placeholder-product.png";
+                                      }}
+                                    />
+                                  </div>
+                                )
+                              )}
+                            </div>
+
+                            <div className="order-product-info">
+                              <h6>{item.product_name}</h6>
+
+                              <span>
+                                Quantity: {item.quantity}
+                              </span>
+
+                              <span>
+                                Unit price: {money(item.unit_price)}
+                              </span>
+                            </div>
+
+                            <strong className="order-product-total">
+                              {money(item.line_total)}
+                            </strong>
                           </div>
-
-                          <div className="order-product-info">
-                            <h6>{item.product_name}</h6>
-
-                            <span>
-                              Quantity: {item.quantity}
-                            </span>
-
-                            <span>
-                              Unit price: {money(item.unit_price)}
-                            </span>
-                          </div>
-
-                          <strong className="order-product-total">
-                            {money(item.line_total)}
-                          </strong>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     {/* Order totals */}
@@ -465,40 +546,41 @@ export default function YourOrders() {
                     </div>
 
                     {/* Order rejection reason */}
-{String(order.order_status || "").toLowerCase() ===
-  "rejected" && (
-  <Alert
-    variant="danger"
-    className="order-rejection"
-  >
-    <strong>
-      <i className="bi bi-exclamation-triangle-fill me-2" />
-      Order Rejected
-    </strong>
+                    {String(order.order_status || "").toLowerCase() ===
+                      "rejected" && (
+                      <Alert
+                        variant="danger"
+                        className="order-rejection"
+                      >
+                        <strong>
+                          <i className="bi bi-exclamation-triangle-fill me-2" />
+                          Order Rejected
+                        </strong>
 
-    <p className="mb-0 mt-2">
-      <strong>Reason:</strong>{" "}
-      {order.order_rejection_reason ||
-        "No rejection reason was provided."}
-    </p>
-  </Alert>
-)}
+                        <p className="mb-0 mt-2">
+                          <strong>Reason:</strong>{" "}
+                          {order.order_rejection_reason ||
+                            "No rejection reason was provided."}
+                        </p>
+                      </Alert>
+                    )}
 
-{/* Payment rejection reason */}
-{order.payment_rejection_reason && (
-  <Alert
-    variant="danger"
-    className="order-rejection"
-  >
-    <strong>
-      Payment Rejection Reason:
-    </strong>
+                    {/* Payment rejection reason */}
+                    {order.payment_rejection_reason && (
+                      <Alert
+                        variant="danger"
+                        className="order-rejection"
+                      >
+                        <strong>
+                          Payment Rejection Reason:
+                        </strong>
 
-    <p className="mb-0">
-      {order.payment_rejection_reason}
-    </p>
-  </Alert>
-)}
+                        <p className="mb-0">
+                          {order.payment_rejection_reason}
+                        </p>
+                      </Alert>
+                    )}
+
                     {/* Delivery location */}
                     {order.delivery_location && (
                       <div className="order-location">
