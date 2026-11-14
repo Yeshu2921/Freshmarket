@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "./Cart.css";
@@ -152,7 +153,9 @@ export default function Cart() {
           <div>
             <span className="cart-eyebrow">FRESHMART SHOPPING</span>
             <h1>My Cart</h1>
-            <p>Review your selected products before placing your order.</p>
+            <p>
+              Review your selected products before placing your order.
+            </p>
           </div>
 
           <Link to="/market" className="cart-continue-link">
@@ -216,17 +219,25 @@ export default function Cart() {
                             }}
                           />
                         ) : (
-                          <span className="cart-no-image">No image</span>
+                          <span className="cart-no-image">
+                            No image
+                          </span>
                         )}
                       </div>
 
                       <div className="cart-product-details">
                         <h3>{item.name || "Product"}</h3>
 
-                        {item.sku && (
-                          <span className="cart-product-sku">
-                            SKU: {item.sku}
+                        {item.brand && (
+                          <span className="cart-product-brand">
+                            Brand: {item.brand}
                           </span>
+                        )}
+
+                        {item.description && (
+                          <p className="cart-product-description">
+                            {item.description}
+                          </p>
                         )}
 
                         <div className="cart-unit-price">
@@ -237,7 +248,9 @@ export default function Cart() {
                         <div className="cart-quantity-control">
                           <button
                             type="button"
-                            aria-label={`Decrease quantity of ${item.name || "product"}`}
+                            aria-label={`Decrease quantity of ${
+                              item.name || "product"
+                            }`}
                             onClick={() => changeQuantity(index, -1)}
                           >
                             −
@@ -247,7 +260,9 @@ export default function Cart() {
 
                           <button
                             type="button"
-                            aria-label={`Increase quantity of ${item.name || "product"}`}
+                            aria-label={`Increase quantity of ${
+                              item.name || "product"
+                            }`}
                             onClick={() => changeQuantity(index, 1)}
                           >
                             +
