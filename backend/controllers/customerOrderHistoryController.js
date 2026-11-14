@@ -77,9 +77,7 @@ const getCustomerOrderHistory = async (req, res) => {
       .map(() => "?")
       .join(",");
 
-    // 5. Retrieve orders, latest payment, and latest review.
-    // Derived tables are used for TiDB compatibility.
-
+    // 5. Retrieve orders, latest payment, and latest review
     const [orders] = await db.query(
       `
       SELECT
@@ -135,7 +133,7 @@ const getCustomerOrderHistory = async (req, res) => {
       customerIds
     );
 
-    // 6. Retrieve products for all orders
+    // 6. Retrieve products, including all selected product images
     const orderIds = orders.map((order) => order.id);
 
     let items = [];
@@ -153,6 +151,7 @@ const getCustomerOrderHistory = async (req, res) => {
           product_id,
           product_name,
           product_image,
+          product_images,
           unit_price,
           quantity,
           line_total
@@ -163,7 +162,39 @@ const getCustomerOrderHistory = async (req, res) => {
         orderIds
       );
 
-      items = orderItems;
+      // Normalize product_images JSON for frontend use.
+      items = orderItems.map((item) => {
+        let productImages = [];
+
+        try {
+          if (Array.isArray(item.product_images)) {
+            productImages = item.product_images;
+          } else if (typeof item.product_images === "string") {
+            productImages = JSON.parse(item.product_images);
+          }
+        } catch (error) {
+          productImages = [];
+        }
+
+        // Remove empty values and duplicate image paths.
+        productImages = [
+          ...new Set(
+            productImages.filter(
+              (image) => typeof image === "string" && image.trim()
+            )
+          ),
+        ];
+
+        // Backward compatibility with older orders.
+        if (productImages.length === 0 && item.product_image) {
+          productImages = [item.product_image];
+        }
+
+        return {
+          ...item,
+          product_images: productImages,
+        };
+      });
     }
 
     // 7. Attach products to their corresponding orders
