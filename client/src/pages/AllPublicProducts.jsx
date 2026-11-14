@@ -46,6 +46,19 @@ function nameOf(item) {
   return item?.name || item?.category_name || "Category";
 }
 
+// Read brand information from common API response formats.
+function brandOf(product) {
+  const value =
+    product?.brand_name ??
+    product?.brand?.brand_name ??
+    product?.brand?.name ??
+    product?.brand;
+
+  if (typeof value === "string") return value;
+
+  return "";
+}
+
 function imageUrl(value) {
   if (!value) return "";
 
@@ -75,11 +88,10 @@ function imagesOf(product) {
 
 /*
  * Price display:
- * selling_price  = original price (bold)
- * discount_price = discount price (crossed out)
+ * selling_price = original price
+ * discount_price = discounted price
  *
- * Cart:
- * Uses discount_price as the payable price when valid.
+ * Cart calculation preserves the existing selling_price behavior.
  */
 function priceDetails(product) {
   const original = Number(product?.selling_price ?? 0);
@@ -120,15 +132,19 @@ function readCart() {
 }
 
 function saveCart(nextCart) {
-  if (nextCart.length > 0) {
-    sessionStorage.setItem(CART_KEY, JSON.stringify(nextCart));
-  } else {
-    sessionStorage.removeItem(CART_KEY);
+  try {
+    if (nextCart.length > 0) {
+      sessionStorage.setItem(CART_KEY, JSON.stringify(nextCart));
+    } else {
+      sessionStorage.removeItem(CART_KEY);
+    }
+
+    localStorage.removeItem(CART_KEY);
+
+    window.dispatchEvent(new Event(CART_EVENT));
+  } catch (error) {
+    console.error("Could not save cart:", error);
   }
-
-  localStorage.removeItem(CART_KEY);
-
-  window.dispatchEvent(new Event(CART_EVENT));
 }
 
 export default function AllPublicProducts() {
@@ -337,9 +353,8 @@ export default function AllPublicProducts() {
       const matchesSearch =
         !query ||
         String(product.name || "").toLowerCase().includes(query) ||
-        String(product.sku || "").toLowerCase().includes(query) ||
-        String(product.barcode || "").toLowerCase().includes(query) ||
-        String(product.description || "").toLowerCase().includes(query);
+        String(product.description || "").toLowerCase().includes(query) ||
+        brandOf(product).toLowerCase().includes(query);
 
       return matchesMain && matchesSub && matchesSearch;
     });
@@ -369,64 +384,68 @@ export default function AllPublicProducts() {
     setCartMessage("");
   }
 
+  // Add product details, including brand and description, to the cart.
   function addToCart(product, image) {
-  const { current, original, hasDiscount } = priceDetails(product);
+    const { current, original, hasDiscount } = priceDetails(product);
 
-  const productId = String(
-    product.id ?? product.product_id ?? ""
-  );
+    const productId = String(
+      product.id ?? product.product_id ?? ""
+    );
 
-  const chosenImage = image || imagesOf(product)[0] || "";
+    const chosenImage = image || imagesOf(product)[0] || "";
 
-  if (!productId) {
-    setCartMessage("This product cannot be added right now.");
-    return;
-  }
+    if (!productId) {
+      setCartMessage("This product cannot be added right now.");
+      return;
+    }
 
-  const nextCart = [...cart];
+    const nextCart = [...cart];
 
-  const existingIndex = nextCart.findIndex(
-    (item) =>
-      String(item.productId) === productId &&
-      String(item.image || "") === chosenImage
-  );
+    const existingIndex = nextCart.findIndex(
+      (item) =>
+        String(item.productId) === productId &&
+        String(item.image || "") === chosenImage
+    );
 
-  if (existingIndex >= 0) {
-    nextCart[existingIndex] = {
-      ...nextCart[existingIndex],
-      unitPrice: original,
-      originalPrice: original,
-      hasDiscount,
-      quantity:
-        Number(nextCart[existingIndex].quantity || 0) + 1,
-    };
-  } else {
-    nextCart.push({
+    const productDetails = {
       productId,
       name: product.name || "Product",
+      brand: brandOf(product),
+      description: product.description || "",
       image: chosenImage,
 
-      // Use selling_price for the order calculation.
+      // Preserve the existing order price calculation.
       unitPrice: original,
 
-      // Keep the discount price separately for display.
+      // Keep discount information separately.
       discountPrice: current,
       originalPrice: original,
       hasDiscount,
 
-      quantity: 1,
       unit: product.unit || "unit",
-      sku: product.sku || "",
-    });
+    };
+
+    if (existingIndex >= 0) {
+      nextCart[existingIndex] = {
+        ...nextCart[existingIndex],
+        ...productDetails,
+        quantity:
+          Number(nextCart[existingIndex].quantity || 0) + 1,
+      };
+    } else {
+      nextCart.push({
+        ...productDetails,
+        quantity: 1,
+      });
+    }
+
+    setCart(nextCart);
+    saveCart(nextCart);
+
+    setCartMessage(
+      `${product.name || "Product"} added to your cart.`
+    );
   }
-
-  setCart(nextCart);
-  saveCart(nextCart);
-
-  setCartMessage(
-    `${product.name || "Product"} added to your cart.`
-  );
-}
 
   function goToOrder() {
     if (cartCount > 0) {
@@ -558,7 +577,7 @@ export default function AllPublicProducts() {
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search products, SKU or barcode..."
+                placeholder="Search products by name, brand or description..."
                 aria-label="Search products"
               />
 
@@ -817,21 +836,15 @@ export default function AllPublicProducts() {
                   {selectedProduct.name}
                 </h3>
 
+                {brandOf(selectedProduct) && (
+                  <p className="all-product-modal-detail">
+                    <strong>Brand:</strong> {brandOf(selectedProduct)}
+                  </p>
+                )}
+
                 {selectedProduct.description && (
                   <p className="all-product-modal-description">
                     {selectedProduct.description}
-                  </p>
-                )}
-
-                {selectedProduct.sku && (
-                  <p className="all-product-modal-detail">
-                    <strong>SKU:</strong> {selectedProduct.sku}
-                  </p>
-                )}
-
-                {selectedProduct.barcode && (
-                  <p className="all-product-modal-detail">
-                    <strong>Barcode:</strong> {selectedProduct.barcode}
                   </p>
                 )}
 
