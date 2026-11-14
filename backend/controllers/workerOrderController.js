@@ -17,11 +17,6 @@ async function generateCustomerOrderReviewId(connection) {
 
 // ======================================================
 // PRIVATE PAYMENT RECEIPT FILE HELPERS
-//
-// Allowed folder:
-// backend/private_uploads/customer/payment-receipts
-//
-// Never expose private_uploads using express.static().
 // ======================================================
 
 function getReceiptUploadDirectory() {
@@ -154,10 +149,6 @@ async function deletePrivateReceiptFile(receiptPath) {
 
 // ======================================================
 // NORMALIZE ORDER PRODUCT IMAGES
-//
-// Supports:
-// 1. New product_images JSON column.
-// 2. Old product_image column.
 // ======================================================
 
 function normalizeOrderItemImages(item) {
@@ -186,7 +177,6 @@ function normalizeOrderItemImages(item) {
     ),
   ];
 
-  // Backward compatibility with older orders.
   if (productImages.length === 0 && item.product_image) {
     productImages = [item.product_image];
   }
@@ -199,7 +189,6 @@ function normalizeOrderItemImages(item) {
 
 // ======================================================
 // GET /api/worker-orders
-// Get Pending, Confirmed and Rejected orders.
 // ======================================================
 
 const getWorkerOrders = async (req, res) => {
@@ -268,7 +257,6 @@ const getWorkerOrders = async (req, res) => {
 
 // ======================================================
 // GET /api/worker-orders/:orderId
-// Get one order with customer, items, payment and reviews.
 // ======================================================
 
 const getWorkerOrderDetails = async (req, res) => {
@@ -330,7 +318,6 @@ const getWorkerOrderDetails = async (req, res) => {
 
     const order = orders[0];
 
-    // Retrieve all selected product images.
     const [rawItems] = await db.query(
       `SELECT
           id,
@@ -386,7 +373,6 @@ const getWorkerOrderDetails = async (req, res) => {
 
 // ======================================================
 // GET /api/worker-orders/:orderId/receipt
-// Securely display a customer's payment receipt.
 // ======================================================
 
 const getWorkerOrderReceipt = async (req, res) => {
@@ -487,7 +473,6 @@ const getWorkerOrderReceipt = async (req, res) => {
 
 // ======================================================
 // POST /api/worker-orders/:orderId/approve
-// Approve payment, deduct stock and confirm order.
 // ======================================================
 
 const approveOrder = async (req, res) => {
@@ -702,7 +687,6 @@ const approveOrder = async (req, res) => {
       }
     }
 
-    // Deduct stock once per product, not once per selected image.
     for (const item of productItems) {
       const [updateResult] = await connection.query(
         `UPDATE products
@@ -795,7 +779,6 @@ const approveOrder = async (req, res) => {
 
 // ======================================================
 // POST /api/worker-orders/:orderId/reject
-// Reject a pending order without changing stock.
 // ======================================================
 
 const rejectOrder = async (req, res) => {
@@ -927,7 +910,6 @@ const rejectOrder = async (req, res) => {
 
 // ======================================================
 // GET /api/worker-orders/sales-history
-// Get confirmed and rejected orders.
 // ======================================================
 
 const getWorkerSalesHistory = async (req, res) => {
@@ -1070,16 +1052,28 @@ const deleteRejectedOrder = async (req, res) => {
       .map((payment) => payment.receipt_path)
       .filter(Boolean);
 
-    // Delete payment records first.
+    // Delete payment records.
     await connection.query(
       `DELETE FROM customer_payments
        WHERE order_id = ?`,
       [orderId]
     );
 
+    // Delete order review history.
+    await connection.query(
+      `DELETE FROM customer_order_reviews
+       WHERE order_id = ?`,
+      [orderId]
+    );
+
+    // Delete order items without accessing products or product_images.
+    await connection.query(
+      `DELETE FROM customer_order_items
+       WHERE order_id = ?`,
+      [orderId]
+    );
+
     // Delete the rejected order.
-    // Related order items and reviews must either cascade
-    // or be explicitly deleted before this query.
     const [deleteResult] = await connection.query(
       `DELETE FROM customer_orders
        WHERE id = ?
@@ -1093,7 +1087,7 @@ const deleteRejectedOrder = async (req, res) => {
 
     await connection.commit();
 
-    // Delete receipt files only after DB commit succeeds.
+    // Delete private receipt files after database commit.
     for (const receiptPath of receiptPaths) {
       await deletePrivateReceiptFile(receiptPath);
     }
@@ -1109,7 +1103,10 @@ const deleteRejectedOrder = async (req, res) => {
       try {
         await connection.rollback();
       } catch (rollbackError) {
-        console.error("Delete rejected order rollback error:", rollbackError);
+        console.error(
+          "Delete rejected order rollback error:",
+          rollbackError
+        );
       }
     }
 
@@ -1118,6 +1115,10 @@ const deleteRejectedOrder = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to delete rejected order.",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : undefined,
     });
   } finally {
     if (connection) {
