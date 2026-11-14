@@ -153,6 +153,51 @@ async function deletePrivateReceiptFile(receiptPath) {
 }
 
 // ======================================================
+// NORMALIZE ORDER PRODUCT IMAGES
+//
+// Supports:
+// 1. New product_images JSON column.
+// 2. Old product_image column.
+// ======================================================
+
+function normalizeOrderItemImages(item) {
+  let productImages = [];
+
+  try {
+    if (Array.isArray(item.product_images)) {
+      productImages = item.product_images;
+    } else if (typeof item.product_images === "string") {
+      productImages = JSON.parse(item.product_images);
+    }
+  } catch (error) {
+    productImages = [];
+  }
+
+  if (!Array.isArray(productImages)) {
+    productImages = [];
+  }
+
+  productImages = [
+    ...new Set(
+      productImages.filter(
+        (image) =>
+          typeof image === "string" && image.trim() !== ""
+      )
+    ),
+  ];
+
+  // Backward compatibility with older orders.
+  if (productImages.length === 0 && item.product_image) {
+    productImages = [item.product_image];
+  }
+
+  return {
+    ...item,
+    product_images: productImages,
+  };
+}
+
+// ======================================================
 // GET /api/worker-orders
 // Get Pending, Confirmed and Rejected orders.
 // ======================================================
@@ -285,13 +330,15 @@ const getWorkerOrderDetails = async (req, res) => {
 
     const order = orders[0];
 
-    const [items] = await db.query(
+    // Retrieve all selected product images.
+    const [rawItems] = await db.query(
       `SELECT
           id,
           order_id,
           product_id,
           product_name,
           product_image,
+          product_images,
           unit_price,
           quantity,
           line_total
@@ -300,6 +347,8 @@ const getWorkerOrderDetails = async (req, res) => {
        ORDER BY id ASC`,
       [orderId]
     );
+
+    const items = rawItems.map(normalizeOrderItemImages);
 
     const [reviews] = await db.query(
       `SELECT
@@ -653,6 +702,7 @@ const approveOrder = async (req, res) => {
       }
     }
 
+    // Deduct stock once per product, not once per selected image.
     for (const item of productItems) {
       const [updateResult] = await connection.query(
         `UPDATE products
