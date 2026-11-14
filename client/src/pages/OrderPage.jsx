@@ -68,7 +68,6 @@ function normalizeCartItems(items) {
       item.cart_item_id ||
       createCartItemId(item, index);
 
-    // Make IDs unique even for old cart entries.
     if (usedIds.has(cartItemId)) {
       cartItemId = `${cartItemId}-${index}`;
     }
@@ -205,6 +204,7 @@ function saveCart(cart) {
 
 // =============================================
 // GROUP CART ITEMS FOR ORDER SUBMISSION
+// PRESERVE ALL SELECTED PRODUCT IMAGES
 // =============================================
 
 function prepareOrderItems(cart) {
@@ -213,7 +213,10 @@ function prepareOrderItems(cart) {
   for (const item of cart) {
     const productId = Number(getProductId(item));
     const quantity = getQuantity(item);
-    const image = item.image || item.image_path || "";
+
+    if (!Number.isSafeInteger(productId) || productId < 1) {
+      continue;
+    }
 
     if (!combined.has(productId)) {
       combined.set(productId, {
@@ -227,11 +230,46 @@ function prepareOrderItems(cart) {
 
     existing.quantity += quantity;
 
-    if (typeof image === "string" && image.trim()) {
-      const cleanImage = image.trim();
+    // Collect image paths from supported cart fields.
+    const imageValues = [
+      item.image,
+      item.imageUrl,
+      item.image_url,
+      item.image_path,
+      item.product_image,
+    ];
 
-      if (!existing.images.includes(cleanImage)) {
-        existing.images.push(cleanImage);
+    // Support cart items containing multiple images.
+    if (Array.isArray(item.images)) {
+      imageValues.push(...item.images);
+    }
+
+    if (Array.isArray(item.product_images)) {
+      imageValues.push(...item.product_images);
+    }
+
+    for (const imageValue of imageValues) {
+      let imagePath = "";
+
+      if (typeof imageValue === "string") {
+        imagePath = imageValue.trim();
+      } else if (
+        imageValue &&
+        typeof imageValue === "object"
+      ) {
+        imagePath = String(
+          imageValue.image_path ||
+          imageValue.image ||
+          imageValue.url ||
+          ""
+        ).trim();
+      }
+
+      if (
+        imagePath &&
+        !existing.images.includes(imagePath)
+      ) {
+        existing.images.push(imagePath);
       }
     }
   }
